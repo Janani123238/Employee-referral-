@@ -7,6 +7,7 @@ function bindViewSpecific(){
   if(state.view==='tracking') bindTrackingView();
   if(state.view==='manageJobs') bindManageJobs();
   if(state.view==='allReferrals') bindAllReferrals();
+  if(state.view==='shortlist') bindAiShortlist();
   if(state.view==='reports') bindReportsView();
   if(state.view==='employees') bindEmployeesView();
   if(state.view==='policy') bindPolicyView();
@@ -14,11 +15,13 @@ function bindViewSpecific(){
   if(state.view==='aiSettings') bindAiSettings();
   if(state.view==='userManagement') bindUserManagement();
   if(state.view==='resumeAnalysis') bindResumeAnalysis();
+  if(state.view==='bulkImport') bindBulkImport();
   if(state.view==='interviews') bindInterviewsView();
   if(state.view==='profile') bindProfileView();
   if(state.view==='editProfile') bindEditProfileView();
   if(state.view==='emailTemplates') bindEmailTemplatesView();
   if(state.view==='auditLogs') bindAuditLogsView();
+  if(state.view==='emailCenter') bindEmailCenterView();
 }
 
 function bindProfileView(){
@@ -32,12 +35,14 @@ function bindEditProfileView(){
     const name = document.getElementById('editProfileName').value.trim();
     const dept = document.getElementById('editProfileDept').value.trim();
     const designation = document.getElementById('editProfileDesig').value.trim();
+    const phone = document.getElementById('editProfilePhone').value.trim();
+    const location = document.getElementById('editProfileLocation').value.trim();
     if(!name){ toast('Name is required','amber'); btn.disabled=false; btn.textContent='Save Changes'; return; }
     try{
-      await api('/api/employees/me/profile',{method:'PATCH',body:{name,dept,designation}});
+      await api('/api/employees/me/profile',{method:'PATCH',body:{name,dept,designation,phone,location}});
       state.user.name = name;
       const idx = state.employees.findIndex(e=>e.id===state.user.employeeId);
-      if(idx>-1){ state.employees[idx].name=name; state.employees[idx].dept=dept; state.employees[idx].designation=designation; }
+      if(idx>-1){ state.employees[idx].name=name; state.employees[idx].dept=dept; state.employees[idx].designation=designation; state.employees[idx].phone=phone; state.employees[idx].location=location; }
       toast('Profile updated','success');
       nav('profile');
     }catch(e){ toast('Could not update: '+e.message,'error'); btn.disabled=false; btn.textContent='Save Changes'; }
@@ -60,9 +65,11 @@ async function bindResumeAnalysis(){
         const job = jobById(r.jobId);
         const score = r.aiScore?.overall||50;
         const match = r.matchPercent||50;
+        const blend = Math.round((score+match)/2);
         let rank = 'Low';
-        if(score>=75 && match>=70) rank='Top Candidate';
-        else if(score>=50 || match>=50) rank='Medium';
+        if(blend>=95) rank='Exceptional';
+        else if(blend>=80) rank='Strong';
+        else if(blend>=40) rank='Medium';
         return {...r, resumeScore:score, atsScore:r.atsScore||score, skillMatchPct:match, rank};
       });
       analyzed.sort((a,b)=>b.resumeScore-a.resumeScore);
@@ -73,7 +80,7 @@ async function bindResumeAnalysis(){
           <tbody>
             ${analyzed.map((r,i)=>{
               const job = jobById(r.jobId);
-              const rankColor = r.rank==='Top Candidate'?'#059669':r.rank==='Medium'?'#D97706':'#DC2626';
+              const rankColor = r.rank==='Exceptional'||r.rank==='Strong'?'#059669':r.rank==='Medium'?'#D97706':'#DC2626';
               return `<tr>
                 <td class="mono" style="font-weight:700;">#${i+1}</td>
                 <td><strong>${r.candidateName}</strong></td>
@@ -132,51 +139,70 @@ async function bindInterviewsView(){
       
       let search = '', statusFilter = '';
       const statuses = ['Applied','Resume Screening','Shortlisted','Interview Scheduled','Interview Completed','Selected','Rejected','Offer Released','Joined'];
+      const filterOptions = ['Auto Rejected','Rejected','Screening','Shortlisted','Interview Scheduled','Selected'];
+      
+      function statusMatches(r, f){
+        if(!f) return true;
+        if(f==='Auto Rejected') return r.autoRejected && r.status==='Rejected';
+        if(f==='Rejected') return !r.autoRejected && r.status==='Rejected';
+        if(f==='Screening') return r.status==='Resume Screening';
+        return r.status===f;
+      }
       
       function drawTable(list){
         const filtered = list.filter(r=>{
-          if(search && !r.candidateName.toLowerCase().includes(search.toLowerCase())) return false;
-          if(statusFilter && r.status !== statusFilter) return false;
+          if(search && !(r.candidateName||'').toLowerCase().includes(search.toLowerCase())) return false;
+          if(!statusMatches(r, statusFilter)) return false;
           return true;
         });
         
         let html = `
-        <div class="glass" style="padding:14px;margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
-          <div style="flex:1;min-width:200px;"><label class="field-label">Search Candidates</label><input class="input" id="ivSearch" placeholder="Search by name..." value="${search}"/></div>
-          <div style="min-width:160px;"><label class="field-label">Status</label>
-            <select class="input" id="ivStatusFilter"><option value="">All</option>${statuses.map(s=>`<option ${statusFilter===s?'selected':''}>${s}</option>`).join('')}</select>
+        <div class="glass search-bar" style="padding:14px;margin-bottom:14px;">
+          <div class="search-row">
+            <div style="flex:1;min-width:200px;position:relative;"><label class="field-label">Search Candidates</label><input class="input" id="ivSearch" placeholder="Type a name, email or skill…" value="${search}"/></div>
+            <div style="min-width:170px;"><label class="field-label">Status</label>
+              <select class="input" id="ivStatusFilter"><option value="">All</option>${filterOptions.concat(statuses.filter(s=>!filterOptions.includes(s))).map(s=>`<option ${statusFilter===s?'selected':''}>${s}</option>`).join('')}</select>
+            </div>
+            <div style="display:flex;align-items:end;gap:8px;">
+              <div class="glass" style="padding:8px 14px;font-size:12px;color:var(--ink-soft);white-space:nowrap;"><strong class="mono" style="color:var(--primary);">${filtered.length}</strong> / ${list.length} shown</div>
+            </div>
           </div>
         </div>
         <div class="glass" style="padding:6px;overflow-x:auto;">
           <table class="data-table">
-            <thead><tr><th>Candidate</th><th>Applied Job</th><th>Referred By</th><th>Resume</th><th>AI Score</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Candidate</th><th>Applied Job</th><th>Referred By</th><th>Resume</th><th>AI Score</th><th>Match</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               ${filtered.map(r=>{
                 const job = jobById(r.jobId);
                 const emp = employeeById(r.referredBy);
                 const score = r.aiScore?.overall || 0;
                 const scoreColor = score >= 75 ? '#059669' : score >= 50 ? '#D97706' : '#DC2626';
-                return `<tr>
-                  <td><strong>${r.candidateName}</strong><div style="font-size:11px;color:var(--ink-soft);">${r.email||''}</div></td>
+                const isRejected = r.status==='Rejected';
+                return `<tr style="${isRejected?'opacity:0.85;':''}">
+                  <td><strong>${r.candidateName}</strong><div style="font-size:11px;color:var(--ink-soft);">${r.email||''}</div>
+                    ${r.autoRejected?`<div style="font-size:10.5px;color:#DC2626;margin-top:2px;display:flex;align-items:center;gap:4px;">${icon('zap',11)} Auto-rejected · orig match ${r.originalMatch||'—'}%</div>`:''}
+                  </td>
                   <td style="font-size:12.5px;">${job?job.title:'—'}</td>
                   <td style="font-size:12.5px;">${emp?emp.name:'—'}</td>
                   <td>${r.resumeFileUrl?`<a href="${r.resumeFileUrl}" target="_blank" style="color:var(--primary);font-size:12px;">View</a>`:'<span style="color:var(--ink-soft);font-size:12px;">None</span>'}</td>
                   <td><div style="display:flex;align-items:center;gap:6px;"><div style="width:50px;height:6px;border-radius:3px;background:rgba(226,232,240,0.12);overflow:hidden;"><div style="width:${score}%;height:100%;background:${scoreColor};border-radius:3px;"></div></div><span class="mono" style="font-size:12px;font-weight:700;color:${scoreColor};">${score}</span></div></td>
-                  <td><select class="input iv-status-select" data-ref-id="${r.id}" style="padding:4px 8px;font-size:11px;min-width:130px;">
+                  <td class="mono" style="font-weight:700;color:${isRejected?'var(--coral)':'var(--primary)'};">${r.matchPercent||'—'}%</td>
+                  <td><select class="input iv-status-select" data-ref-id="${r.id}" style="padding:4px 8px;font-size:11px;min-width:130px;${isRejected?'color:#DC2626;':''}">
                     ${statuses.map(s=>`<option ${r.status===s?'selected':''}>${s}</option>`).join('')}
                   </select></td>
                   <td><div style="display:flex;gap:4px;flex-wrap:wrap;">
                     <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;" data-schedule-iv='${JSON.stringify({id:r.id,name:r.candidateName,jobId:r.jobId})}'>Schedule</button>
+                    ${isRejected?`<button class="btn" style="font-size:11px;padding:3px 8px;background:rgba(5,150,105,0.14);color:#059669;" data-iv-reopen="${r.id}">Reopen</button>`:''}
+                    ${isRejected?`<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:#D97706;" data-iv-reanalyze="${r.id}">Re-evaluate</button>`:''}
+                    <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:var(--primary);" data-iv-override="${r.id}">Override</button>
                     <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;" data-view-timeline='${r.id}'>Timeline</button>
-                    <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;" onclick="window.open('${r.resumeFileUrl||'#'}','_blank')">Resume</button>
-                    ${r.resumeFileUrl?`<a class="btn btn-ghost" style="font-size:11px;padding:3px 8px;text-decoration:none;" href="${r.resumeFileUrl}" download>Download</a>`:''}
                   </div></td>
                 </tr>`;
               }).join('')}
             </tbody>
           </table>
         </div>
-        <div style="margin-top:10px;font-size:12px;color:var(--ink-soft);">Showing ${filtered.length} of ${list.length} candidates</div>`;
+        <div style="margin-top:10px;font-size:12px;color:var(--ink-soft);">Showing ${filtered.length} of ${list.length} candidates · auto-rejected candidates are visible here for HR review</div>`;
         
         container.innerHTML = html;
         
@@ -186,14 +212,48 @@ async function bindInterviewsView(){
         document.querySelectorAll('.iv-status-select').forEach(sel=>{
           sel.addEventListener('change', async ()=>{
             try{
-              await api(`/api/referrals/${sel.dataset.refId}/status`, {method:'PATCH', body:{status:sel.value}});
+              const updated = await api(`/api/referrals/${sel.dataset.refId}/status`, {method:'PATCH', body:{status:sel.value}});
               toast('Status updated to '+sel.value, 'success');
+              const r = list.find(x=>x.id===sel.dataset.refId);
+              if(r) Object.assign(r, updated);
+              drawTable(list);
             }catch(e){ toast('Failed: '+e.message, 'error'); renderCandidateList(); }
           });
         });
         
         document.querySelectorAll('[data-schedule-iv]').forEach(btn=>{
           btn.addEventListener('click', ()=>openScheduleModal(JSON.parse(btn.dataset.scheduleIv)));
+        });
+
+        document.querySelectorAll('[data-iv-reopen]').forEach(btn=>{
+          btn.addEventListener('click', async ()=>{
+            if(!confirm('Reopen this candidate to "Resume Screening"?')) return;
+            try{
+              await api(`/api/referrals/${btn.dataset.ivReopen}/status`, {method:'PATCH', body:{status:'Resume Screening'}});
+              toast('Candidate reopened for screening', 'success');
+              renderCandidateList();
+            }catch(e){ toast('Failed: '+e.message, 'error'); }
+          });
+        });
+
+        document.querySelectorAll('[data-iv-reanalyze]').forEach(btn=>{
+          btn.addEventListener('click', async ()=>{
+            btn.disabled=true; btn.textContent='Re-evaluating…';
+            try{
+              const res = await api(`/api/referrals/${btn.dataset.ivReanalyze}/reanalyze`, {method:'POST'});
+              toast(res.reopened
+                ? `Re-evaluation cleared the bar — ${res.referral.matchPercent}% (${res.verdict.category}), reopened`
+                : `Re-evaluated — match ${res.referral.matchPercent}% (${res.verdict.category})`, 'success');
+              renderCandidateList();
+            }catch(e){ toast('Re-evaluation failed: '+e.message, 'error'); btn.disabled=false; btn.textContent='Re-evaluate'; }
+          });
+        });
+
+        document.querySelectorAll('[data-iv-override]').forEach(btn=>{
+          btn.addEventListener('click', ()=>{
+            const r = list.find(x=>x.id===btn.dataset.ivOverride);
+            if(r) openOverrideModal(r, ()=>renderCandidateList());
+          });
         });
         
         document.querySelectorAll('[data-view-timeline]').forEach(btn=>{
@@ -214,7 +274,7 @@ async function bindInterviewsView(){
           <div class="glass-strong pop-in" style="max-width:560px;width:100%;padding:26px;max-height:85vh;overflow-y:auto;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
               <h3 style="margin:0;font-size:16px;">Schedule Interview — ${cand.name}</h3>
-              <button class="btn btn-ghost" onclick="document.getElementById('scheduleOverlay').remove()" style="font-size:18px;">✕</button>
+              <button class="btn btn-ghost" onclick="document.getElementById('scheduleOverlay').remove()" style="padding:6px;">${icon('x',16)}</button>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div><label class="field-label">Interview Round</label><select class="input" id="schRound">${rounds.map(r=>`<option>${r}</option>`).join('')}</select></div>
@@ -227,15 +287,17 @@ async function bindInterviewsView(){
               <div style="grid-column:1/-1;"><label class="field-label">Location (for offline)</label><input class="input" id="schLocation" placeholder="Room / Office address"/></div>
               <div style="grid-column:1/-1;"><label class="field-label">Additional Notes</label><textarea class="input" id="schNotes" rows="3"></textarea></div>
             </div>
-            <div style="display:flex;gap:10px;margin-top:16px;">
+            <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
               <button class="btn btn-primary" id="saveSchBtn">Save Interview</button>
               <button class="btn btn-outline" id="sendInviteBtn">Send Invitation</button>
+              <button class="btn btn-outline" id="teamsBtn" title="Create a Microsoft Teams online meeting for this interview">Teams Meeting</button>
               <button class="btn btn-ghost" onclick="document.getElementById('scheduleOverlay').remove()">Cancel</button>
             </div>
+            <div id="schResult" style="margin-top:12px;"></div>
           </div>
         </div>`;
         
-        const saveInterview = async (sendInvite=false)=>{
+        const saveInterview = async (sendInvite=false, closeAfter=true)=>{
           const btn = sendInvite ? document.getElementById('sendInviteBtn') : document.getElementById('saveSchBtn');
           btn.disabled=true; btn.textContent='Saving...';
           try{
@@ -251,23 +313,60 @@ async function bindInterviewsView(){
               location: document.getElementById('schLocation').value,
               notes: document.getElementById('schNotes').value,
             }});
+            createdId = iv.id;
             if(sendInvite && iv.id){
               try{
                 const invResult = await api(`/api/interviews/${iv.id}/send-invitation`, {method:'POST'});
                 toast(invResult.message || 'Invitation sent', 'success');
               }catch(e){ toast('Interview saved but invitation failed: '+e.message, 'amber'); }
-            } else {
+            } else if(!sendInvite && closeAfter){
               toast('Interview scheduled', 'success');
             }
-            document.getElementById('scheduleOverlay').remove();
-            await api(`/api/referrals/${cand.id}/status`, {method:'PATCH', body:{status:'Interview Scheduled'}});
-            renderTab();
+            if(closeAfter){
+              document.getElementById('scheduleOverlay').remove();
+              await api(`/api/referrals/${cand.id}/status`, {method:'PATCH', body:{status:'Interview Scheduled'}});
+              renderTab();
+            }
+            return iv;
           }catch(e){ toast('Failed: '+e.message, 'error'); }
           btn.disabled=false; btn.textContent = sendInvite?'Send Invitation':'Save Interview';
+          return null;
         };
-        
-        document.getElementById('saveSchBtn').addEventListener('click', ()=>saveInterview(false));
-        document.getElementById('sendInviteBtn').addEventListener('click', ()=>saveInterview(true));
+
+        let createdId = null;
+        document.getElementById('saveSchBtn').addEventListener('click', ()=>saveInterview(false, true));
+        document.getElementById('sendInviteBtn').addEventListener('click', ()=>saveInterview(true, true));
+        document.getElementById('teamsBtn').addEventListener('click', async ()=>{
+          const teamsBtn = document.getElementById('teamsBtn');
+          const resultEl = document.getElementById('schResult');
+          teamsBtn.disabled=true; teamsBtn.textContent='Creating Teams meeting…';
+          try{
+            let iv = null;
+            if(createdId){
+              iv = await api(`/api/interviews/${createdId}/create-teams-meeting`, {method:'POST'});
+            } else {
+              iv = await saveInterview(false, false);
+              if(iv && iv.id){
+                iv = await api(`/api/interviews/${iv.id}/create-teams-meeting`, {method:'POST'});
+              }
+            }
+            if(iv && iv.meetingLink){
+              document.getElementById('schMeetingLink').value = iv.meetingLink;
+              resultEl.innerHTML = `<div class="glass" style="padding:12px 14px;font-size:12.5px;border:1px solid rgba(5,150,105,0.3);">
+                <strong style="color:#059669;">✓ Teams meeting created</strong><br/>
+                <a href="${iv.meetingLink}" target="_blank" style="color:var(--primary);word-break:break-all;">${iv.meetingLink}</a>
+              </div>`;
+              toast('Teams meeting created', 'success');
+            } else {
+              resultEl.innerHTML = `<div style="font-size:12.5px;color:var(--coral);">${(iv && iv.detail) || 'Teams meeting could not be created.'}</div>`;
+              toast('Teams meeting could not be created', 'error');
+            }
+          }catch(e){
+            resultEl.innerHTML = `<div style="font-size:12.5px;color:var(--coral);">${e.message}</div>`;
+            toast('Teams failed: '+e.message, 'error');
+          }
+          teamsBtn.disabled=false; teamsBtn.textContent='Teams Meeting';
+        });
         document.getElementById('scheduleOverlay').addEventListener('click',(e)=>{ if(e.target.id==='scheduleOverlay') e.target.remove(); });
       }
     }catch(e){ container.innerHTML='<div class="glass" style="padding:20px;color:var(--coral);">Failed to load: '+e.message+'</div>'; }
@@ -283,19 +382,21 @@ async function bindInterviewsView(){
       const firstDay = new Date(year, month-1, 1).getDay();
       
       let calDays = '';
-      for(let i=0;i<firstDay;i++) calDays += '<div style="min-height:80px;background:rgba(226,232,240,0.03);"></div>';
+      for(let i=0;i<firstDay;i++) calDays += '<div class="cal-day-cell" style="background:rgba(226,232,240,0.03);border:none;"></div>';
       for(let d=1;d<=daysInMonth;d++){
         const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
         const dayInterviews = interviews.filter(iv=>iv.interviewDate===dateStr);
         const isToday = d===now.getDate();
         calDays += `
-        <div style="min-height:80px;border:1px solid rgba(226,232,240,0.08);padding:6px;border-radius:8px;${isToday?'background:rgba(37,99,235,0.08);border-color:var(--primary);':''}">
+        <div class="cal-day-cell${isToday?' today':''}">
           <div style="font-size:12px;font-weight:700;${isToday?'color:var(--primary);':''}">${d}</div>
-          ${dayInterviews.slice(0,3).map(iv=>{
-            const color = iv.status==='Completed'?'#059669':iv.status==='Cancelled'?'#DC2626':iv.status==='Rescheduled'?'#D97706':'#2563EB';
-            return `<div style="font-size:10px;padding:2px 6px;border-radius:4px;background:${color}15;color:${color};margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" data-cal-iv='${JSON.stringify(iv)}'>${iv.candidateName} — ${iv.roundName}</div>`;
-          }).join('')}
-          ${dayInterviews.length>3?`<div style="font-size:10px;color:var(--ink-soft);">+${dayInterviews.length-3} more</div>`:''}
+          <div style="flex:1;min-height:0;overflow:hidden;">
+            ${dayInterviews.slice(0,3).map(iv=>{
+              const color = iv.status==='Completed'?'#059669':iv.status==='Cancelled'?'#DC2626':iv.status==='Rescheduled'?'#D97706':'#2563EB';
+              return `<div class="cal-day-card" style="background:${color}15;color:${color};" data-cal-iv='${JSON.stringify(iv)}'>${iv.candidateName} — ${iv.roundName}</div>`;
+            }).join('')}
+            ${dayInterviews.length>3?`<div class="cal-more">+${dayInterviews.length-3} more</div>`:''}
+          </div>
         </div>`;
       }
       
@@ -310,9 +411,11 @@ async function bindInterviewsView(){
         </div>
       </div>
       <div class="glass" style="padding:12px;">
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">
-          ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div style="text-align:center;font-size:11px;font-weight:700;color:var(--ink-soft);padding:4px;">${d}</div>`).join('')}
-          ${calDays}
+        <div class="cal-scroll">
+          <div class="cal-grid">
+            ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div style="text-align:center;font-size:11px;font-weight:700;color:var(--ink-soft);padding:4px;">${d}</div>`).join('')}
+            ${calDays}
+          </div>
         </div>
       </div>`;
       
@@ -363,7 +466,7 @@ async function bindInterviewsView(){
             const color = t.type==='interview'?'#2563EB':t.type==='activity'?'#1D4ED8':'#059669';
             return `<div style="margin-bottom:14px;position:relative;">
               <div style="width:12px;height:12px;border-radius:50%;background:${color};position:absolute;left:-25px;top:3px;border:2px solid #fff;box-shadow:0 0 0 2px ${color}33;"></div>
-              <div style="font-size:13px;font-weight:600;">${t.icon||'📋'} ${t.title}</div>
+              <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;">${icon('fileText',14)} ${t.title}</div>
               <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${t.description}</div>
               <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${t.performedBy?'By '+t.performedBy+' · ':''}${t.date?new Date(t.date).toLocaleString():''}</div>
             </div>`;
@@ -389,9 +492,7 @@ async function bindUserManagement(){
             <td><strong>${u.name}</strong></td>
             <td>${u.email}</td>
             <td><select class="input" style="padding:6px 10px;font-size:12px;" data-user-role="${u.id}">
-              <option value="employee" ${u.role==='employee'?'selected':''}>Employee</option>
-              <option value="hr" ${u.role==='hr'?'selected':''}>HR</option>
-              <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+              ${['employee','manager','hr','hr_manager','chro','vp','cto','ceo','system_admin','admin'].map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${roleLabel(r)}</option>`).join('')}
             </select></td>
             <td>${u.isActive?'<span class="chip" style="background:rgba(5,150,105,0.15);color:#059669;">Active</span>':'<span class="chip" style="background:rgba(220,38,38,0.15);color:var(--coral);">Inactive</span>'}</td>
             <td style="font-size:12px;color:var(--ink-soft);">${fmtRelative(u.created_at)}</td>
@@ -419,9 +520,9 @@ function startPolling(){
   pollTimer = setInterval(async ()=>{
     if(!state.user || !state.role) return;
     try{
-      const isHr = state.role === 'hr' || state.role === 'admin';
+      const canSeeTeam = isHrRole(state.role) || state.role==='manager';
       const [referrals, notifications] = await Promise.allSettled([
-        api(isHr ? '/api/referrals' : '/api/referrals/mine'),
+        api(canSeeTeam ? '/api/referrals' : '/api/referrals/mine'),
         api('/api/notifications'),
       ]);
       if(referrals.status==='fulfilled' && Array.isArray(referrals.value) && JSON.stringify(referrals.value)!==JSON.stringify(state.referrals)){
@@ -442,8 +543,6 @@ function startPolling(){
 
 /* ------------------------------- Init ------------------------------- */
 (async function init(){
-  // A password-reset email link lands here as /?reset_token=... — route
-  // straight to the reset screen regardless of any existing session.
   const params = new URLSearchParams(window.location.search);
   const resetToken = params.get('reset_token');
   if(resetToken){
@@ -451,6 +550,22 @@ function startPolling(){
     state.loginMode = 'reset';
     history.replaceState({}, '', window.location.pathname); // scrub token from the visible URL
     render();
+    return;
+  }
+
+  // SSO return: the callback lands on /?sso_token=<jwt>. Persist it, scrub the
+  // URL, then fall through to the normal authenticated-session path below
+  // (loads /api/auth/me and renders the dashboard for the user's role).
+  const ssoToken = params.get('sso_token');
+  if(ssoToken){
+    setToken(ssoToken);
+    history.replaceState({}, '', window.location.pathname);
+  }
+  const ssoError = params.get('sso_error');
+  if(ssoError){
+    history.replaceState({}, '', window.location.pathname);
+    render();
+    setTimeout(()=> toast('SSO sign-in failed: '+decodeURIComponent(ssoError), 'error'), 200);
     return;
   }
 

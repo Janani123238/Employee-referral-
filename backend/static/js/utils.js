@@ -13,6 +13,16 @@ function currentUserEmployee(){ return state.employees.find(e=>e.id===state.user
 function jobById(id){ return state.jobs.find(j=>j.id===id); }
 function employeeById(id){ return state.employees.find(e=>e.id===id); }
 
+/* HR/admin-like roles that can see the full referral pipeline (mirrors backend HR_ROLES). */
+function isHrRole(role){
+  return ['hr','hr_manager','chro','vp','cto','ceo','system_admin','admin'].includes(role||state.role);
+}
+function roleLabel(role){
+  const map = {employee:'Employee', manager:'Manager', hr:'HR', hr_manager:'HR Manager', chro:'CHRO',
+               vp:'VP', cto:'CTO', ceo:'CEO', system_admin:'System Admin', admin:'Admin', candidate:'Candidate'};
+  return map[role] || (role ? role.replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase()) : '—');
+}
+
 function attachTilt(root){
   root.querySelectorAll('.tilt-card').forEach(card=>{
     card.addEventListener('mousemove', e=>{
@@ -41,21 +51,6 @@ function matchMeterSVG(percent, size=64, strokeW=7){
 }
 
 function skillTagColor(i){
-  const cols = ['#2563EB','#0891B2','#DC2626','#059669','#D97706','#7C3AED'];
+  const cols = ['#EFF3F7','#E6EDF5','#E0F2F0','#F1F5F9','#EAF2F8'];
   return cols[i%cols.length];
-}
-
-function roleDisplay(role){
-  const labels = {
-    employee: 'Employee',
-    manager: 'Manager',
-    hr: 'HR',
-    hr_manager: 'HR Manager',
-    vp: 'VP',
-    cto: 'CTO',
-    ceo: 'CEO',
-    system_admin: 'System Admin',
-    admin: 'Admin',
-  };
-  return labels[role] || role;
 }

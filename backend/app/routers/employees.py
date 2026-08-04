@@ -18,6 +18,8 @@ def serialize(e: models.Employee, db: Session):
         "dept": e.dept,
         "designation": e.designation or "",
         "email": e.email,
+        "phone": e.phone or "",
+        "location": e.location or "",
         "color": e.color,
         "joined": e.joined,
         "isActive": e.is_active,
@@ -54,7 +56,8 @@ def create_employee(payload: schemas.EmployeeCreateIn, db: Session = Depends(get
 
     employee = models.Employee(
         name=payload.name, dept=payload.dept, designation=payload.designation or "",
-        email=payload.email, color=color,
+        email=payload.email, phone=payload.phone or "", location=payload.location or "",
+        color=color,
         joined=date.today().isoformat(), is_active=True,
     )
     db.add(employee)
@@ -63,7 +66,7 @@ def create_employee(payload: schemas.EmployeeCreateIn, db: Session = Depends(get
     temp_password = None
     if payload.createLogin:
         temp_password = payload.password or secrets.token_urlsafe(9)
-        VALID_ROLES = {"employee", "manager", "hr", "hr_manager", "vp", "cto", "ceo", "system_admin"}
+        VALID_ROLES = {"employee", "manager", "hr", "hr_manager", "chro", "vp", "cto", "ceo", "system_admin", "admin"}
         login_role = payload.role if payload.role in VALID_ROLES else "employee"
         db.add(models.User(
             name=payload.name, email=payload.email,
@@ -81,6 +84,7 @@ def create_employee(payload: schemas.EmployeeCreateIn, db: Session = Depends(get
 
 @router.patch("/me")
 def update_own_profile(name: str = None, dept: str = None, designation: str = None,
+                       phone: str = None, location: str = None,
                        db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Allow any authenticated user to update their own employee profile fields."""
     if not user.employee_id:
@@ -95,6 +99,10 @@ def update_own_profile(name: str = None, dept: str = None, designation: str = No
         employee.dept = dept
     if designation is not None:
         employee.designation = designation
+    if phone is not None:
+        employee.phone = phone
+    if location is not None:
+        employee.location = location
     db.commit()
     db.refresh(employee)
     return serialize(employee, db)
@@ -116,6 +124,10 @@ def update_own_profile_body(payload: schemas.EmployeeUpdateIn,
         employee.dept = payload.dept
     if payload.designation is not None:
         employee.designation = payload.designation
+    if payload.phone is not None:
+        employee.phone = payload.phone
+    if payload.location is not None:
+        employee.location = payload.location
     db.commit()
     db.refresh(employee)
     return serialize(employee, db)
@@ -134,6 +146,10 @@ def update_employee(employee_id: str, payload: schemas.EmployeeUpdateIn,
         employee.dept = payload.dept
     if payload.designation is not None:
         employee.designation = payload.designation
+    if payload.phone is not None:
+        employee.phone = payload.phone
+    if payload.location is not None:
+        employee.location = payload.location
     if payload.color is not None:
         employee.color = payload.color
     if payload.isActive is not None:
@@ -150,7 +166,7 @@ def update_employee(employee_id: str, payload: schemas.EmployeeUpdateIn,
 
 @router.patch("/{employee_id}/role")
 def change_role(employee_id: str, role: str, db: Session = Depends(get_db), user=Depends(require_hr)):
-    VALID_ROLES = {"employee", "manager", "hr", "hr_manager", "vp", "cto", "ceo", "system_admin", "admin"}
+    VALID_ROLES = {"employee", "manager", "hr", "hr_manager", "chro", "vp", "cto", "ceo", "system_admin", "admin"}
     if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {', '.join(sorted(VALID_ROLES))}")
     linked_user = db.query(models.User).filter(models.User.employee_id == employee_id).first()

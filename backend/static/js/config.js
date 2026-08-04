@@ -60,6 +60,24 @@ async function uploadResumeFile(file){
   return apiUpload('/api/resumes/upload', file);
 }
 
+async function apiForm(path, formData){
+  const headers = {};
+  const t = getToken();
+  if(t) headers['Authorization'] = 'Bearer '+t;
+  const res = await fetch(API_BASE + path, { method:'POST', headers, body: formData });
+  if(res.status === 401){
+    clearToken(); state.user=null; state.role=null; render();
+    throw new Error('Session expired, please sign in again');
+  }
+  let data = null;
+  try{ data = await res.json(); }catch(e){ /* no body */ }
+  if(!res.ok){
+    const msg = (data && (data.detail || data.message)) || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
 /* ---------------------------- Neural background --------------------------- */
 (function neuralBackground(){
   const canvas = document.getElementById('neuralBg');
@@ -122,17 +140,18 @@ const state = {
   notifications:[], unreadCount:0, policyContent:'',
   view:'dashboard',
   lastAnalyzedResume:null,
-  chat:{open:false, messages:[]},
+  chat:{open:false, messages:[], listening:false, tts:false, lang:'en-US'},
   loginTab:'email', loginMode:null,
   aiStatus:null,
+  referPendingJob:null, referPendingRef:'',
 };
 
 async function loadAllData(){
-  const isHr = state.user && (state.user.role === 'hr' || state.user.role === 'admin');
+  const canSeeTeam = state.user && (isHrRole(state.user.role) || state.user.role==='manager');
   const [jobs, employees, referrals, settings, notifications, policy, ai] = await Promise.allSettled([
     api('/api/jobs'),
     api('/api/employees'),
-    api(isHr ? '/api/referrals' : '/api/referrals/mine'),
+    api(canSeeTeam ? '/api/referrals' : '/api/referrals/mine'),
     api('/api/settings'),
     api('/api/notifications'),
     api('/api/policy'),
@@ -196,6 +215,56 @@ async function aiGenerateJD(brief){
 async function aiChat(userMessage, history){
   const r = await api('/api/ai/chat', {method:'POST', body:{message:userMessage, history}});
   return r.reply;
+}
+/* Stream a chat answer token-by-token over SSE. onDelta(delta) fires with the
+   full answer-so-far each time a chunk arrives; resolves with the final text. */
+async function aiChatStream(userMessage, history, onDelta){
+  const headers = {'Content-Type':'application/json'};
+  const t = getToken();
+  if(t) headers['Authorization'] = 'Bearer '+t;
+  const res = await fetch(API_BASE + '/api/ai/chat/stream', {
+    method:'POST', headers, body: JSON.stringify({message:userMessage, history}),
+  });
+  if(res.status === 401){
+    clearToken(); state.user=null; state.role=null; render();
+    throw new Error('Session expired, please sign in again');
+  }
+  if(!res.ok){
+    let data = null;
+    try{ data = await res.json(); }catch(e){}
+    throw new Error((data && (data.detail || data.message)) || `Request failed (${res.status})`);
+  }
+  if(!res.body || !res.body.getReader){
+    const data = await res.json();
+    throw new Error('Streaming not supported');
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let full = '';
+  while(true){
+    const {done, value} = await reader.read();
+    if(done) break;
+    buffer += decoder.decode(value, {stream:true});
+    const blocks = buffer.split('\n\n');
+    buffer = blocks.pop();
+    for(const block of blocks){
+      const line = block.trim();
+      if(!line.startsWith('data: ')) continue;
+      let payload;
+      try{ payload = JSON.parse(line.slice(6)); }catch(e){ continue; }
+      if(payload.error) throw new Error(payload.error);
+      else if(payload.done){
+        full = payload.reply || full;
+        if(typeof onDelta === 'function') onDelta(full);
+      }
+      else if(payload.delta){
+        full = payload.delta;
+        if(typeof onDelta === 'function') onDelta(full);
+      }
+    }
+  }
+  return full;
 }
 
 /* ------------------------------ Mutations ------------------------------ */

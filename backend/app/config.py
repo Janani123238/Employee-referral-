@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,10 +32,13 @@ class Settings:
     # Ollama local model server — kept server-side only, never sent to the browser
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
+    # Dedicated embedding model used by the vector store (KB semantic retrieval)
+    OLLAMA_EMBED_MODEL: str = os.getenv("OLLAMA_EMBED_MODEL", "all-minilm")
 
     # External AI provider settings (can also be configured via Admin panel in DB)
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    # Gemini: accept both the newer GOOGLE_GENERATIVE_AI_API_KEY and the legacy GEMINI_API_KEY
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_GENERATIVE_AI_API_KEY", "")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
@@ -65,6 +69,32 @@ class Settings:
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_FROM: str = os.getenv("SMTP_FROM", "MuraAI Refer <no-reply@muraai.com>")
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "true").lower() != "false"
+
+    # Microsoft Entra ID (MSAL) SSO. When AZURE_CLIENT_ID / AZURE_TENANT_ID are
+    # set, the sign-in flow redirects to Entra ID and exchanges the auth code
+    # for a session JWT. Leave empty to disable SSO.
+    AZURE_CLIENT_ID: str = os.getenv("AZURE_CLIENT_ID", "")
+    AZURE_CLIENT_SECRET: str = os.getenv("AZURE_CLIENT_SECRET", "")
+    AZURE_TENANT_ID: str = os.getenv("AZURE_TENANT_ID", "")
+    AZURE_AUTHORITY: str = os.getenv(
+        "AZURE_AUTHORITY",
+        f"https://login.microsoftonline.com/{os.getenv('AZURE_TENANT_ID', 'organizations')}",
+    )
+
+    @property
+    def microsoft_redirect_uri(self) -> str:
+        """The exact redirect URI registered in Entra (App registration ->
+        Authentication -> Web). Derived from FRONTEND_URL so the same code works
+        for local dev and production: {FRONTEND_URL}/api/auth/microsoft/callback.
+        Example: http://localhost:8000/api/auth/microsoft/callback"""
+        return f"{self.FRONTEND_URL.rstrip('/')}/api/auth/microsoft/callback"
+
+    # SSO role provisioning. Emails that match a key in SSO_ROLE_MAP (JSON, e.g.
+    # {"ceo@muraai.com":"ceo","hr@muraai.com":"hr"}) get that role on first
+    # sign-in. Otherwise SSO_ORG_DOMAIN users are provisioned via the email
+    # local-part heuristic (ceo/cto/vp/hr/chro/manager/admin prefixes).
+    SSO_ROLE_MAP: dict = json.loads(os.getenv("SSO_ROLE_MAP", "{}"))
+    SSO_ORG_DOMAIN: str = os.getenv("SSO_ORG_DOMAIN", "muraai.com")
 
 
 settings = Settings()

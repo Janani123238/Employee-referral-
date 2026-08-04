@@ -10,6 +10,7 @@ function render(){
     initLandingAnchors();
     setTimeout(function(){ initHero3D(); initShowcaseCard(); }, 50);
     loadPublicJobs().then(()=>{ const grid=document.getElementById('lpJobGrid'); if(grid) grid.innerHTML=renderLandingJobCards(); });
+    loadLandingStats();
     if(state.loginMode){
       setTimeout(()=>{
         if(state.loginMode==='forgot') showForgotModal();
@@ -17,9 +18,23 @@ function render(){
         else showLoginModal();
       }, 100);
     }
+    const lpParams = new URLSearchParams(window.location.search);
+    const refJobId = lpParams.get('job');
+    if(refJobId){
+      state.referPendingJob = refJobId;
+      state.referPendingRef = lpParams.get('ref') || '';
+      setTimeout(()=>{ showReferralModal(refJobId); }, 400);
+      history.replaceState({}, '', window.location.pathname);
+    }
     return;
   }
   if(!state.role) state.role = state.user.role || 'employee';
+
+  if(state.role === 'candidate'){
+    app.innerHTML = candidateShell();
+    bindCandidateShell();
+    return;
+  }
 
   app.innerHTML = shell();
   bindShell();

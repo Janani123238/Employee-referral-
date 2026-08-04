@@ -125,8 +125,8 @@ def get_current_user(
     return user
 
 
-ADMIN_ROLES = {"hr", "hr_manager", "vp", "cto", "ceo", "system_admin", "admin"}
-HR_ROLES = {"hr", "hr_manager", "vp", "cto", "ceo", "system_admin", "admin"}
+ADMIN_ROLES = {"hr", "hr_manager", "chro", "vp", "cto", "ceo", "system_admin", "admin"}
+HR_ROLES = {"hr", "hr_manager", "chro", "vp", "cto", "ceo", "system_admin", "admin"}
 EMPLOYEE_ROLES = {"employee", "manager"}
 
 def require_hr(user: models.User = Depends(get_current_user)) -> models.User:

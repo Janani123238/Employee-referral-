@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:16-alpine
@@ -22,6 +20,9 @@ services:
       - ./backend/.env
     environment:
       DATABASE_URL: postgresql://muraai:muraai@db:5432/muraai
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
 

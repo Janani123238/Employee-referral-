@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from .. import models, schemas, ai_service
+from .. import models, schemas, ai_service, resume_parser
 from ..auth import get_current_user, require_hr
 from ..routers.notifications import create_notification
 from ..routers.activity import log_activity
 from .. import email_service
+from .. import rag_service
+from ..shortlist import shortlist_for_score, rank_label_for_score
 
 router = APIRouter(prefix="/api/referrals", tags=["referrals"])
 
@@ -53,21 +55,54 @@ def serialize(r: models.Referral):
         "weaknesses": r.weaknesses or [],
         "recommendation": r.recommendation or "",
         "rankLabel": r.rank_label or "",
+        "screening": r.screening or {},
+        "isDeleted": bool(r.is_deleted),
+        "deletedAt": r.deleted_at,
+        "deletedBy": r.deleted_by or "",
+        "autoRejected": bool(r.auto_rejected),
+        "rejectionReason": r.rejection_reason or "",
+        "originalMatch": r.original_match or 0,
+        "evaluationHistory": r.evaluation_history or [],
     }
+
+
+def _append_history(referral, action, from_status, to_status, by="", reason="",
+                    match_before=None, match_after=None, verdict=""):
+    hist = list(referral.evaluation_history or [])
+    hist.append({
+        "action": action,
+        "fromStatus": from_status,
+        "toStatus": to_status,
+        "by": by,
+        "reason": reason,
+        "matchBefore": match_before,
+        "matchAfter": match_after,
+        "verdict": verdict,
+        "at": datetime.utcnow().isoformat(),
+    })
+    referral.evaluation_history = hist[-50:]
 
 
 @router.get("")
 def list_referrals(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    q = db.query(models.Referral).order_by(models.Referral.submitted_date.desc())
-    return [serialize(r) for r in q.all()]
+    """Role-scoped referral list.
+
+    HR/admin see everything; managers see their own + team (same department);
+    employees see only their own referrals.
+    """
+    refs = rag_service.scoped_referrals(db, user)
+    refs = sorted(refs, key=lambda r: r.submitted_date, reverse=True)
+    return [serialize(r) for r in refs]
 
 
 @router.get("/mine")
 def my_referrals(db: Session = Depends(get_db), user=Depends(get_current_user)):
     if not user.employee_id:
         return []
-    q = db.query(models.Referral).filter(models.Referral.referred_by == user.employee_id).order_by(
-        models.Referral.submitted_date.desc())
+    q = db.query(models.Referral).filter(
+        models.Referral.referred_by == user.employee_id,
+        models.Referral.is_deleted.is_(False),
+    ).order_by(models.Referral.submitted_date.desc())
     return [serialize(r) for r in q.all()]
 
 
@@ -105,6 +140,8 @@ async def create_referral(payload: schemas.ReferralIn, db: Session = Depends(get
     job = db.query(models.Job).filter(models.Job.id == payload.jobId).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if job.is_deleted or job.status != "Open":
+        raise HTTPException(status_code=400, detail="This position is no longer open for referrals")
 
     referral = models.Referral(
         candidate_name=payload.candidateName,
@@ -172,6 +209,44 @@ async def create_referral(payload: schemas.ReferralIn, db: Session = Depends(get
             if isinstance(match_detail, dict):
                 _ref.match_percent = match_detail.get("matchPercent", _ref.match_percent)
                 _ref.missing_skills = match_detail.get("missingSkills", [])
+                _ref.recommendation = match_detail.get("recommendation", _ref.recommendation)
+                _ref.rank_label = rank_label_for_score(_ref.match_percent or 0)
+
+                # AI SHORTLISTING: below the 50 threshold -> auto reject (with email).
+                decision = shortlist_for_score(_ref.match_percent or 0)
+                if decision["autoReject"] and _ref.status in ("Submitted", "Applied", "Resume Screening"):
+                    _ref.status = "Rejected"
+                    _ref.auto_rejected = True
+                    _ref.original_match = _ref.match_percent or 0
+                    _ref.rejection_reason = (f"AI match score {_ref.match_percent}% fell below the "
+                                             f"40% auto-reject threshold.")
+                    _hist = list(_ref.evaluation_history or [])
+                    _hist.append({
+                        "action": "AI auto-reject",
+                        "matchBefore": None, "matchAfter": _ref.match_percent,
+                        "verdict": decision["category"], "autoReject": True,
+                        "by": "MuraAI AI",
+                        "at": datetime.utcnow().isoformat(),
+                    })
+                    _ref.evaluation_history = _hist
+                    log_activity(_db, _ref.id, "AI auto-rejected",
+                                 f"AI shortlisting scored {_ref.match_percent}% (below 40) — candidate auto-rejected by policy.", "MuraAI AI")
+                    from .admin import log_audit
+                    _audit = _db.query(models.User).filter(models.User.id == _ref.referred_by).first()
+                    if _audit:
+                        log_audit(_db, _audit, "AI auto-reject referral", target="referral", target_id=_ref.id,
+                                  details=f"Candidate: {_ref.candidate_name} | match {_ref.match_percent}%")
+                    _job = _db.query(models.Job).filter(models.Job.id == _ref.job_id).first()
+                    _job_title = _job.title if _job else "the role"
+                    if _ref.email:
+                        email_service.send_rejection_email(_ref.email, _ref.candidate_name, _job_title)
+                    from .emails import record_email
+                    if _ref.email:
+                        record_email(_db, _ref.email,
+                                     f"Referral Update — {_ref.candidate_name}",
+                                     f"Unfortunately, {_ref.candidate_name}'s application for {_job_title} was not successful this time.",
+                                     "automated", "rejection", "sent", created_by="MuraAI AI",
+                                     referral_id=_ref.id, job_id=_ref.job_id or "")
             _db.commit()
         except Exception:
             pass
@@ -212,7 +287,23 @@ def update_status(referral_id: str, payload: schemas.ReferralStatusUpdate,
         raise HTTPException(status_code=404, detail="Referral not found")
 
     old_status = referral.status
+    if old_status == payload.status:
+        return serialize(referral)
+
     referral.status = payload.status
+
+    # Manual rejection vs AI auto-reject provenance.
+    if payload.status == "Rejected":
+        referral.auto_rejected = False
+        if not referral.rejection_reason:
+            referral.rejection_reason = f"Manually rejected by {user.name}."
+    # Moving out of Rejected is an HR override of the AI decision.
+    if old_status == "Rejected":
+        _append_history(referral, "HR override", old_status, payload.status,
+                        by=user.name, reason="HR overrode the rejection decision.",
+                        matchBefore=referral.original_match or referral.match_percent,
+                        matchAfter=referral.match_percent)
+
     db.commit()
     db.refresh(referral)
 
@@ -293,22 +384,44 @@ def update_status(referral_id: str, payload: schemas.ReferralStatusUpdate,
     if payload.status == "Submitted":
         log_activity(db, referral_id, "Referral submitted",
                      f"Referral submitted by {user.name}", user.name)
-    elif payload.status == "Offer":
+    elif payload.status in ("Shortlisted", "Resume Screening", "Interview Scheduled", "Interview Completed", "Selected", "Offer Released", "Rejected", "Offer", "Joined"):
+        from .emails import record_email
         if referral.email:
+            try:
+                if payload.status in ("Shortlisted", "Interview Scheduled", "Interview Completed", "Selected", "Offer Released"):
+                    email_service.send_selection_email(referral.email, referral.candidate_name, job_title) if payload.status == "Selected" else email_service.send_interview_scheduled_email(
+                        referral.email, referral.candidate_name, job_title, payload.status)
+                    record_email(db, referral.email, f"Referral Update — {referral.candidate_name}",
+                                 f"Your application status for {job_title} is now: {payload.status}.",
+                                 "automated", "shortlist", "sent", referral_id=referral_id, job_id=referral.job_id or "",
+                                 created_by=f"{user.name} ({user.role})")
+            except Exception:
+                pass
+        if payload.status == "Offer" and referral.email:
             try:
                 email_service.send_offer_email(referral.email, referral.candidate_name, job_title)
+                record_email(db, referral.email, f"Offer Extended — {referral.candidate_name}",
+                             f"An offer has been extended to {referral.candidate_name} for the {job_title} position.",
+                             "automated", "offer", "sent", referral_id=referral_id, job_id=referral.job_id or "",
+                             created_by=f"{user.name} ({user.role})")
             except Exception:
                 pass
-    elif payload.status == "Rejected":
-        if referral.email:
+        elif payload.status == "Rejected" and referral.email:
             try:
                 email_service.send_rejection_email(referral.email, referral.candidate_name, job_title)
+                record_email(db, referral.email, f"Referral Update — {referral.candidate_name}",
+                             f"Unfortunately, {referral.candidate_name}'s application for {job_title} was not successful this time.",
+                             "automated", "rejection", "sent", referral_id=referral_id, job_id=referral.job_id or "",
+                             created_by=f"{user.name} ({user.role})")
             except Exception:
                 pass
-    elif payload.status == "Joined":
-        if referral.email:
+        elif payload.status == "Joined" and referral.email:
             try:
                 email_service.send_joining_confirmation_email(referral.email, referral.candidate_name, job_title)
+                record_email(db, referral.email, f"Joining Confirmation — {referral.candidate_name}",
+                             f"{referral.candidate_name} has officially joined the team for the {job_title} position.",
+                             "automated", "joining", "sent", referral_id=referral_id, job_id=referral.job_id or "",
+                             created_by=f"{user.name} ({user.role})")
             except Exception:
                 pass
 
@@ -317,29 +430,199 @@ def update_status(referral_id: str, payload: schemas.ReferralStatusUpdate,
 
 @router.delete("/{referral_id}")
 def delete_referral(referral_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Soft-delete a referral (audit-safe).
+
+    - Employees may withdraw their own referrals, but only while they are still
+      in 'Submitted' / 'Applied' (no interviews/history to preserve).
+    - HR / admin may soft-delete any referral at any stage. The row is hidden
+      from all lists/reports but kept in the database for audit purposes.
+    """
     referral = db.query(models.Referral).filter(models.Referral.id == referral_id).first()
     if not referral:
         raise HTTPException(status_code=404, detail="Referral not found")
-    if referral.referred_by != user.employee_id:
+    if referral.is_deleted:
+        raise HTTPException(status_code=400, detail="This referral has already been deleted")
+
+    is_hr = user.role in ("hr", "hr_manager", "chro", "vp", "cto", "ceo", "system_admin", "admin")
+    if not is_hr and referral.referred_by != user.employee_id:
         raise HTTPException(status_code=403, detail="You can only delete your own referrals")
-    if referral.status not in ("Submitted", "Applied"):
+    if not is_hr and referral.status not in ("Submitted", "Applied"):
         raise HTTPException(status_code=400, detail=f"Cannot delete a referral with status '{referral.status}'. Only referrals in 'Submitted' or 'Applied' status can be withdrawn.")
 
     candidate_name = referral.candidate_name
+    from .admin import log_audit
 
-    # Delete child rows that have foreign keys to referrals
+    if is_hr:
+        referral.is_deleted = True
+        referral.deleted_at = datetime.utcnow()
+        referral.deleted_by = user.name
+        db.commit()
+        log_audit(db, user, "Referral deleted (soft)",
+                  target="referral", target_id=referral_id,
+                  details=f"Candidate: {candidate_name} | status at delete: {referral.status}")
+        return {"ok": True, "message": "Referral deleted. Record retained for audit."}
+
+    # Employee self-withdrawal — hard delete (no history yet), as before
     db.query(models.ActivityLog).filter(models.ActivityLog.referral_id == referral_id).delete(synchronize_session=False)
     db.query(models.Interview).filter(models.Interview.referral_id == referral_id).delete(synchronize_session=False)
     db.commit()
-
-    from .admin import log_audit
     log_audit(db, user, "Referral withdrawn",
               target="referral", target_id=referral_id,
               details=f"Candidate: {candidate_name}")
-
     db.delete(referral)
     db.commit()
     return {"ok": True, "message": "Referral withdrawn successfully"}
+
+
+@router.post("/{referral_id}/reanalyze")
+async def reanalyze_referral(referral_id: str, db: Session = Depends(get_db), user=Depends(require_hr)):
+    """Re-run the full AI resume evaluation for a referral (resume re-evaluation).
+
+    Recomputes summary, quality scores, tags, fraud flags, interview prediction,
+    job match, missing skills and the AI shortlist verdict. If the candidate was
+    auto-rejected and now scores above the reject threshold, the referral is
+    re-opened so HR can move it forward — this powers the 'Reopen AI decision'
+    flow from the shortlisting screen.
+    """
+    referral = db.query(models.Referral).filter(models.Referral.id == referral_id).first()
+    if not referral:
+        raise HTTPException(status_code=404, detail="Referral not found")
+    if not referral.resume_text and not referral.resume_file_url:
+        raise HTTPException(status_code=400, detail="This referral has no resume text to re-evaluate")
+
+    # Re-run OCR from the stored resume file (best-effort) so edits to the file are picked up.
+    if referral.resume_file_url and referral.resume_file_url.startswith("/api/resumes/file/"):
+        file_key = referral.resume_file_url.rsplit("/", 1)[-1]
+        stored = db.query(models.ResumeFile).filter(models.ResumeFile.id == file_key).first()
+        if stored:
+            try:
+                fresh_text = resume_parser.extract_text(stored.file_name, stored.file_data)
+                if fresh_text and len(fresh_text.strip()) > 20:
+                    referral.resume_text = fresh_text
+            except Exception:
+                pass
+
+    job = db.query(models.Job).filter(models.Job.id == referral.job_id).first()
+    job_dict = {"id": job.id, "title": job.title, "skills": job.skills,
+                "description": job.description, "exp": job.exp} if job else {}
+
+    summary, score, tags, fraud, prediction, match_detail = await asyncio.gather(
+        ai_service.ai_summary(referral.resume_text),
+        ai_service.ai_quality_score(referral.resume_text),
+        ai_service.ai_auto_tags(referral.resume_text),
+        ai_service.ai_fraud_check(referral.resume_text),
+        ai_service.ai_interview_prediction(referral.resume_text, job_dict),
+        ai_service.ai_match_job(referral.resume_text, job_dict),
+        return_exceptions=True,
+    )
+
+    previous = dict(
+        match=referral.match_percent,
+        status=referral.status,
+        rank=referral.rank_label,
+        score=referral.ai_score,
+    )
+
+    if isinstance(summary, dict):
+        referral.ai_summary = summary.get("summary", referral.ai_summary)
+    if isinstance(score, dict):
+        referral.ai_score = score
+    if isinstance(tags, list) and tags:
+        referral.tags = tags
+    if isinstance(fraud, dict):
+        referral.fraud_flags = fraud.get("flags", referral.fraud_flags)
+    if isinstance(prediction, dict):
+        referral.interview_prediction = prediction
+    if isinstance(match_detail, dict):
+        referral.match_percent = match_detail.get("matchPercent", referral.match_percent)
+        referral.missing_skills = match_detail.get("missingSkills", [])
+        referral.recommendation = match_detail.get("recommendation", referral.recommendation)
+        referral.rank_label = rank_label_for_score(referral.match_percent or 0)
+
+    # Refresh the candidate passport (employment gaps, duplicates, credibility, risk).
+    try:
+        from .. import screening as screening_mod
+        referral.screening = screening_mod.deep_screen(db, referral)
+    except Exception:
+        pass
+
+    was_rejected = referral.status == "Rejected"
+    new_match = referral.match_percent or 0
+    decision = shortlist_for_score(new_match)
+
+    # Re-open previously auto-rejected candidates when the re-run clears the bar.
+    if was_rejected and not decision["autoReject"]:
+        referral.status = "Resume Screening"
+        log_activity(db, referral.id, "AI decision reopened",
+                     f"Re-evaluation scored {new_match}% (was auto-rejected) — candidate reopened by {user.name}.",
+                     user.name)
+
+    _append_history(
+        referral, "AI re-evaluation", previous["status"], referral.status,
+        by=user.name,
+        reason=f"Re-run of OCR + JD matching + AI score + passport.",
+        match_before=previous["match"], match_after=new_match, verdict=decision["category"],
+    )
+
+    db.commit()
+    db.refresh(referral)
+
+    from .admin import log_audit
+    log_audit(db, user, "Referral re-evaluated (AI)",
+              target="referral", target_id=referral_id,
+              details=f"Candidate: {referral.candidate_name} | match {previous['match']}% -> {new_match}% | "
+                      f"status: {previous['status']} -> {referral.status} | verdict: {decision['category']}")
+
+    return {
+        "referral": serialize(referral),
+        "verdict": decision,
+        "previous": previous,
+        "reopened": was_rejected and not decision["autoReject"],
+    }
+
+
+@router.post("/{referral_id}/override")
+def override_decision(referral_id: str, payload: schemas.OverrideDecisionIn,
+                      db: Session = Depends(get_db), user=Depends(require_hr)):
+    """HR manually overrides the AI decision and moves the candidate to a stage."""
+    allowed = {"Resume Screening", "Shortlisted", "Interview Scheduled",
+               "Interview Completed", "Selected", "Offer Released", "Joined", "Rejected"}
+    target = payload.targetStatus.strip()
+    if target not in allowed:
+        raise HTTPException(status_code=422, detail=f"Unsupported target status '{target}'")
+
+    referral = db.query(models.Referral).filter(models.Referral.id == referral_id).first()
+    if not referral:
+        raise HTTPException(status_code=404, detail="Referral not found")
+
+    old_status = referral.status
+    _append_history(
+        referral, "HR override", old_status, target,
+        by=user.name, reason=payload.reason or "HR manually overrode the AI decision.",
+        match_before=referral.original_match or referral.match_percent,
+        match_after=referral.match_percent,
+    )
+    referral.status = target
+    if target == "Rejected":
+        referral.auto_rejected = False
+        if not referral.rejection_reason:
+            referral.rejection_reason = f"Manually rejected by {user.name}."
+
+    db.commit()
+    db.refresh(referral)
+
+    log_activity(db, referral.id, "HR override AI decision",
+                 f"AI decision overridden: {old_status} -> {target} by {user.name}."
+                 f"{(' Reason: ' + payload.reason) if payload.reason else ''}",
+                 user.name)
+
+    from .admin import log_audit
+    log_audit(db, user, "HR override AI decision",
+              target="referral", target_id=referral_id,
+              details=f"Candidate: {referral.candidate_name} | {old_status} -> {target}"
+                      f"{(' | ' + payload.reason) if payload.reason else ''}")
+
+    return serialize(referral)
 
 
 @router.get("/{referral_id}")
@@ -347,4 +630,7 @@ def get_referral(referral_id: str, db: Session = Depends(get_db), user=Depends(g
     referral = db.query(models.Referral).filter(models.Referral.id == referral_id).first()
     if not referral:
         raise HTTPException(status_code=404, detail="Referral not found")
+    if not rag_service.is_hr_role(user.role):
+        if referral.referred_by != user.employee_id:
+            raise HTTPException(status_code=403, detail="You can only view your own referrals")
     return serialize(referral)

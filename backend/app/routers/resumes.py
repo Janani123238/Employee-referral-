@@ -1,14 +1,15 @@
 import os
 import uuid
 import logging
+from datetime import datetime
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import Response
 
-from ..auth import get_current_user
-from .. import resume_parser
+from ..auth import get_current_user, require_hr
+from .. import resume_parser, ai_service, models, screening
 from ..database import SessionLocal
-from .. import models
+from ..shortlist import shortlist_for_score, rank_label_for_score
 
 logger = logging.getLogger("resumes")
 
@@ -88,3 +89,201 @@ def _mime_type(ext: str) -> str:
         ".webp": "image/webp",
         ".txt": "text/plain",
     }.get(ext, "application/octet-stream")
+
+
+@router.post("/bulk-import")
+async def bulk_import(
+    job_id: str = Form(""),
+    files: list[UploadFile] = File(...),
+    user=Depends(require_hr),
+):
+    """HR bulk resume import.
+
+    For each file: OCR extraction -> candidate parsing -> duplicate detection ->
+    JD matching (AI) -> candidate creation -> AI passport (gaps / fake-experience
+    / credibility / duplicates) -> auto-shortlist decision. Returns a summary
+    with per-file results.
+    """
+    if len(files) > 50:
+        raise HTTPException(status_code=422, detail="Max 50 files per import")
+
+    import asyncio
+
+    db = SessionLocal()
+    job = None
+    job_dict = {}
+    try:
+        if job_id:
+            job = db.query(models.Job).filter(models.Job.id == job_id).first()
+            if not job:
+                raise HTTPException(status_code=404, detail="Job not found")
+            job_dict = {"id": job.id, "title": job.title, "skills": job.skills,
+                        "description": job.description, "exp": job.exp}
+    finally:
+        db.close()
+
+    sem = asyncio.Semaphore(3)
+
+    async def process_one(file: UploadFile):
+        async with sem:
+            name = file.filename or "resume"
+            ext = os.path.splitext(name)[1].lower()
+            result = {
+                "fileName": name,
+                "success": False,
+                "duplicate": False,
+                "duplicateOf": "",
+                "duplicateReasons": [],
+                "error": "",
+            }
+            try:
+                if ext not in ALLOWED_EXTENSIONS:
+                    result["error"] = f"Unsupported file type '{ext}'"
+                    return result
+                file_bytes = await file.read()
+                if not file_bytes:
+                    result["error"] = "Empty file"
+                    return result
+                if len(file_bytes) > MAX_FILE_BYTES:
+                    result["error"] = "File too large — max 10 MB"
+                    return result
+
+                text = resume_parser.extract_text(name, file_bytes)
+                parsed = ai_service.regex_parse_resume(text)
+                candidate_name = parsed.get("name") or os.path.splitext(name)[0].strip()[:80] or "Candidate"
+                email = parsed.get("email", "")
+                phone = parsed.get("phone", "")
+
+                db = SessionLocal()
+                try:
+                    dup = screening.find_duplicates(db, email=email, phone=phone,
+                                                    name=candidate_name, resume_text=text)
+                    if dup["duplicate"]:
+                        m = dup["matches"][0]
+                        result["duplicate"] = True
+                        result["duplicateOf"] = m["candidateName"]
+                        result["duplicateReasons"] = m["reasons"]
+                        result["fileName"] = name
+                        return result
+                    result["candidateName"] = candidate_name
+                    result["matchPercent"] = 0
+                finally:
+                    db.close()
+
+                file_id = f"res_{uuid.uuid4().hex[:10]}"
+                db = SessionLocal()
+                try:
+                    db.add(models.ResumeFile(id=file_id, file_name=name, file_type=ext, file_data=file_bytes))
+
+                    referral = models.Referral(
+                        candidate_name=candidate_name,
+                        phone=phone,
+                        email=email,
+                        resume_text=text,
+                        resume_file_url=f"/api/resumes/file/{file_id}",
+                        resume_file_name=name,
+                        linkedin=parsed.get("linkedin", ""),
+                        github=parsed.get("github", ""),
+                        current_company=parsed.get("currentCompany", ""),
+                        total_experience=f"{parsed.get('totalExperienceYears') or 0} yrs",
+                        skills=parsed.get("skills", []),
+                        education=parsed.get("education", ""),
+                        certifications=parsed.get("certifications", []),
+                        projects=parsed.get("projects", []),
+                        relationship_to_referrer="Bulk import",
+                        referred_by=user.employee_id,
+                        job_id=job_id,
+                        status="Submitted",
+                        submitted_date=datetime.utcnow(),
+                        ai_score={"resumeQuality": 70, "skillMatch": 70, "communication": 70,
+                                  "experienceMatch": 70, "overall": 70},
+                        match_percent=0,
+                        interview_prediction={"chance": 60, "reasons": []},
+                        evaluation_history=[{
+                            "action": "Bulk import",
+                            "by": user.name,
+                            "at": datetime.utcnow().isoformat(),
+                            "fromStatus": "", "toStatus": "Submitted",
+                        }],
+                    )
+                    db.add(referral)
+                    db.commit()
+                    db.refresh(referral)
+
+                    match_detail = await ai_service.ai_match_job(text, job_dict)
+                    match = 0
+                    if isinstance(match_detail, dict):
+                        match = int(match_detail.get("matchPercent") or 0)
+                        referral.match_percent = match
+                        referral.missing_skills = match_detail.get("missingSkills", [])
+                        referral.recommendation = match_detail.get("recommendation", "")
+                    else:
+                        # Heuristic fallback: overlap of resume skills with job skills.
+                        job_skills = set((job.skills or []) if job else [])
+                        resume_skills = set(parsed.get("skills") or [])
+                        if job_skills:
+                            match = int(round(len(job_skills & resume_skills) / len(job_skills) * 100))
+                        else:
+                            match = 70
+                        referral.match_percent = match
+
+                    decision = shortlist_for_score(match)
+                    if match >= 80:
+                        referral.status = "Shortlisted"
+                    elif match >= 50:
+                        referral.status = "Resume Screening"
+                    else:
+                        referral.status = "Rejected"
+                        referral.auto_rejected = True
+                        referral.original_match = match
+                        referral.rejection_reason = (
+                            f"AI match score {match}% fell below the 40% auto-reject threshold "
+                            f"(bulk import).")
+
+                    referral.rank_label = rank_label_for_score(match)
+                    referral.screening = screening.deep_screen(db, referral)
+                    db.commit()
+
+                    from .activity import log_activity
+                    log_activity(db, referral.id, "Bulk import",
+                                 f"Resume imported by {user.name} — match {match}% ({decision['category']}).",
+                                 user.name)
+                    from .admin import log_audit
+                    log_audit(db, user, "Bulk resume import", target="referral", target_id=referral.id,
+                              details=f"Candidate: {referral.candidate_name} | match {match}% | {decision['category']}")
+
+                    result.update({
+                        "success": True,
+                        "referralId": referral.id,
+                        "candidateName": referral.candidate_name,
+                        "matchPercent": match,
+                        "verdict": decision["category"],
+                        "autoShortlisted": match >= 80,
+                        "hrReview": 50 <= match < 80,
+                        "autoRejected": match < 50,
+                        "riskLevel": (referral.screening or {}).get("riskLevel", ""),
+                        "riskScore": (referral.screening or {}).get("riskScore", 0),
+                    })
+                finally:
+                    db.close()
+                return result
+            except resume_parser.ResumeParseError as exc:
+                result["error"] = str(exc)
+                return result
+            except Exception as exc:
+                logger.exception("Bulk import failed for %s", name)
+                result["error"] = f"Processing failed: {exc}"
+                return result
+
+    results = await asyncio.gather(*(process_one(f) for f in files))
+
+    summary = {
+        "total": len(results),
+        "success": sum(1 for r in results if r["success"]),
+        "duplicates": sum(1 for r in results if r["duplicate"]),
+        "failed": sum(1 for r in results if r["error"]),
+        "autoShortlisted": sum(1 for r in results if r.get("autoShortlisted")),
+        "hrReview": sum(1 for r in results if r.get("hrReview")),
+        "autoRejected": sum(1 for r in results if r.get("autoRejected")),
+    }
+    return {"summary": summary, "results": results}

@@ -6,6 +6,7 @@ from ..database import get_db
 from .. import models, schemas
 from ..auth import get_current_user, require_hr
 from ..routers.activity import log_activity
+from ..routers.admin import log_audit
 from .. import email_service
 
 router = APIRouter(prefix="/api/interviews", tags=["interviews"])
@@ -24,6 +25,7 @@ def serialize(i: models.Interview):
         "endTime": i.end_time,
         "interviewer": i.interviewer,
         "meetingLink": i.meeting_link,
+        "meetingId": i.meeting_id or "",
         "location": i.location,
         "notes": i.notes,
         "status": i.status,
@@ -35,9 +37,13 @@ def serialize(i: models.Interview):
     }
 
 
+def _active():
+    return models.Interview.is_deleted.is_(False)
+
+
 @router.get("")
 def list_interviews(db: Session = Depends(get_db), user=Depends(require_hr)):
-    interviews = db.query(models.Interview).order_by(models.Interview.created_at.desc()).all()
+    interviews = db.query(models.Interview).filter(_active()).order_by(models.Interview.created_at.desc()).all()
     return [serialize(i) for i in interviews]
 
 
@@ -47,7 +53,7 @@ def interview_calendar(year: int = None, month: int = None,
     now = datetime.utcnow()
     year = year or now.year
     month = month or now.month
-    interviews = db.query(models.Interview).all()
+    interviews = db.query(models.Interview).filter(_active()).all()
     result = []
     for iv in interviews:
         if not iv.interview_date:
@@ -65,6 +71,7 @@ def interview_calendar(year: int = None, month: int = None,
 def today_interviews(db: Session = Depends(get_db), user=Depends(require_hr)):
     today = datetime.utcnow().strftime("%Y-%m-%d")
     interviews = db.query(models.Interview).filter(
+        _active(),
         models.Interview.interview_date == today
     ).order_by(models.Interview.start_time).all()
     return [serialize(i) for i in interviews]
@@ -74,6 +81,7 @@ def today_interviews(db: Session = Depends(get_db), user=Depends(require_hr)):
 def upcoming_interviews(db: Session = Depends(get_db), user=Depends(require_hr)):
     today = datetime.utcnow().strftime("%Y-%m-%d")
     interviews = db.query(models.Interview).filter(
+        _active(),
         models.Interview.interview_date >= today,
         models.Interview.status.in_(["Scheduled", "Rescheduled"])
     ).order_by(models.Interview.interview_date, models.Interview.start_time).all()
@@ -83,6 +91,7 @@ def upcoming_interviews(db: Session = Depends(get_db), user=Depends(require_hr))
 @router.get("/referral/{referral_id}")
 def get_interviews_by_referral(referral_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     interviews = db.query(models.Interview).filter(
+        _active(),
         models.Interview.referral_id == referral_id
     ).order_by(models.Interview.created_at.desc()).all()
     return [serialize(i) for i in interviews]
@@ -123,6 +132,8 @@ def create_interview(payload: schemas.InterviewIn, db: Session = Depends(get_db)
         f"{payload.roundName} scheduled with {payload.interviewer} on {payload.interviewDate} ({payload.startTime}-{payload.endTime})",
         user.name,
     )
+    log_audit(db, user, "Interview created", target="interview", target_id=interview.id,
+              details=f"{payload.roundName} | candidate: {interview.candidate_name} | {payload.interviewDate}")
 
     return serialize(interview)
 
@@ -169,6 +180,8 @@ def update_interview(interview_id: str, payload: schemas.InterviewUpdate,
         f"{interview.round_name} updated — status: {interview.status}",
         user.name,
     )
+    log_audit(db, user, "Interview updated", target="interview", target_id=interview_id,
+              details=f"{interview.round_name} | status: {interview.status} | result: {interview.result or '—'}")
 
     return serialize(interview)
 
@@ -214,21 +227,95 @@ def send_interview_invitation(interview_id: str, db: Session = Depends(get_db), 
     return {"ok": True, "message": f"Invitation sent to {candidate_email}"}
 
 
-@router.delete("/{interview_id}")
-def delete_interview(interview_id: str, db: Session = Depends(get_db), user=Depends(require_hr)):
+@router.post("/{interview_id}/create-teams-meeting")
+def create_teams_meeting(interview_id: str, db: Session = Depends(get_db), user=Depends(require_hr)):
+    """Create (or re-use) a Microsoft Teams online meeting for an interview.
+
+    Requires the acting HR user to have signed in via Microsoft SSO so we can
+    act on their behalf (Graph OnlineMeetings.ReadWrite). If SSO tokens aren't
+    available it returns a 409 with a helpful message instead of failing loudly.
+    """
     interview = db.query(models.Interview).filter(models.Interview.id == interview_id).first()
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
 
+    from .. import ms_graph
+    if not ms_graph.available(user.id):
+        raise HTTPException(
+            status_code=409,
+            detail="Teams integration is not connected. Sign in via 'Continue with Microsoft' once, then retry.",
+        )
+
+    referral = db.query(models.Referral).filter(models.Referral.id == interview.referral_id).first()
+    job = db.query(models.Job).filter(models.Job.id == interview.job_id).first()
+    subject = f"Interview: {interview.candidate_name} — {interview.round_name}"
+    if job:
+        subject += f" ({job.title})"
+
+    attendee = None
+    if referral and referral.email:
+        attendee = referral.email
+
+    meeting = ms_graph.create_online_meeting(
+        user.id,
+        subject=subject,
+        start_dt=interview.interview_date,
+        start_time=interview.start_time,
+        end_time=interview.end_time,
+        attendee_email=attendee,
+    )
+
+    interview.meeting_link = meeting["joinUrl"]
+    interview.meeting_id = meeting["id"]
+    db.commit()
+    db.refresh(interview)
+
+    log_activity(
+        db, interview.referral_id,
+        "Teams Meeting Created",
+        f"Microsoft Teams meeting created for {interview.round_name} — {interview.meeting_link}",
+        user.name,
+    )
+    log_audit(db, user, "Teams meeting created", target="interview", target_id=interview_id,
+              details=f"{interview.candidate_name} | {interview.round_name} | {meeting['joinUrl']}")
+
+    if attendee:
+        try:
+            email_service.send_interview_invitation_email(
+                attendee, interview.candidate_name,
+                job.title if job else "the role",
+                interview.interview_date, interview.start_time or "",
+                f"Meeting Link: {interview.meeting_link}", interview.notes or "",
+            )
+        except Exception:
+            pass
+
+    return serialize(interview)
+
+
+@router.delete("/{interview_id}")
+def delete_interview(interview_id: str, db: Session = Depends(get_db), user=Depends(require_hr)):
+    """Soft-delete an interview — hidden from calendars/lists but kept for audit."""
+    interview = db.query(models.Interview).filter(models.Interview.id == interview_id).first()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    if interview.is_deleted:
+        raise HTTPException(status_code=400, detail="This interview has already been deleted")
+
     referral_id = interview.referral_id
-    db.delete(interview)
+    round_name = interview.round_name
+    interview.is_deleted = True
+    interview.deleted_at = datetime.utcnow()
+    interview.deleted_by = user.name
     db.commit()
 
     log_activity(
         db, referral_id,
         "Interview Deleted",
-        f"{interview.round_name} interview deleted",
+        f"{round_name} interview deleted",
         user.name,
     )
+    log_audit(db, user, "Interview deleted (soft)", target="interview", target_id=interview_id,
+              details=f"{round_name} | candidate: {interview.candidate_name}")
 
-    return {"ok": True}
+    return {"ok": True, "message": "Interview deleted. Record retained for audit."}

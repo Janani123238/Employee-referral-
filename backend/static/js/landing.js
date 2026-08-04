@@ -11,13 +11,27 @@ async function loadPublicJobs(){
   if(grid) grid.innerHTML = renderLandingJobCards();
 }
 
+async function loadLandingStats(){
+  try {
+    const res = await fetch('/api/reports/landing-stats');
+    if(!res.ok) return;
+    const s = await res.json();
+    document.querySelectorAll('[data-lp-stat]').forEach(el=>{
+      const val = s[el.dataset.lpStat];
+      if(val === undefined) return;
+      const prefix = el.dataset.prefix || '';
+      el.setAttribute('data-count', val);
+      el.textContent = prefix + Number(val).toLocaleString('en-IN');
+    });
+  } catch(e){ /* keep zeros on failure */ }
+}
+
 /* ================================ Main Render ================================ */
 function renderLandingPage(){
   return `
   <div class="landing-page">
     ${lpHeader()}
     ${lpHero()}
-    ${lpShowcaseCard()}
     ${lpSearchSection()}
     ${lpFeaturedJobs()}
     ${lpHowItWorks()}
@@ -38,7 +52,7 @@ function lpHeader(){
     <div class="lp-header-inner">
       <a href="#" class="lp-logo" onclick="event.preventDefault();window.scrollTo({top:0,behavior:'smooth'})">
         <div class="lp-logo-icon">M</div>
-        <span class="lp-logo-text">MuraAI Refer</span>
+        <span class="lp-logo-text">MuraAI <span style="font-weight:400;color:var(--lp-accent);">Refer</span></span>
       </a>
       <nav class="lp-nav" id="lpNav">
         <a href="#hero" class="lp-nav-link active" data-section="hero">Home</a>
@@ -51,13 +65,14 @@ function lpHeader(){
       <div class="lp-header-actions">
         ${loggedIn
           ? `<button class="lp-btn lp-btn-primary lp-btn-nav" onclick="window.location.reload()">Dashboard</button>`
-          : `<button class="lp-btn lp-btn-primary lp-btn-nav" onclick="showLoginModal()">Login</button>`
+          : `<button class="lp-btn lp-btn-primary lp-btn-nav" onclick="showLoginModal()">Sign In</button>`
         }
         <button class="lp-hamburger" id="lpHamburger" onclick="toggleLpMenu()">
           <span></span><span></span><span></span>
         </button>
       </div>
     </div>
+    <div class="lp-header-glow"></div>
   </header>`;
 }
 
@@ -71,7 +86,9 @@ function toggleLpMenu(){
 /* ================================ Hero ================================ */
 function lpHero(){
   return `
-  <section class="lp-hero" id="hero">
+  <section class="lp-hero enterprise-hero" id="hero">
+    <video class="enterprise-hero-video" autoplay muted loop playsinline><source src="https://videos.pexels.com/video-files/3188992/3188992-hd_1920_1080_25fps.mp4" type="video/mp4"></video>
+    <div class="enterprise-hero-video-overlay"></div>
     <div class="lp-hero-3d-wrap"><canvas id="hero3dCanvas"></canvas></div>
     <div class="lp-hero-bg"></div>
     <div class="lp-hero-geometric">
@@ -81,31 +98,45 @@ function lpHero(){
       <div class="grid-lines"></div>
     </div>
     <div class="lp-hero-content">
-      <div class="lp-hero-badge"><span class="badge-dot"></span> Employee Referral Portal</div>
+      <div class="lp-hero-badge"><span class="badge-dot"></span> Enterprise employee referral platform</div>
       <h1 class="lp-hero-title">Refer <span class="accent-word">Great Talent</span>.<br>Build Strong Teams.</h1>
-      <p class="lp-hero-sub">Join thousands of employees who've helped build world-class teams through our AI-powered referral platform.</p>
+      <p class="lp-hero-sub">Employee Referral Platform with Resume Intelligence, Smart Referrals, and Real-Time Hiring Analytics.</p>
       <div class="lp-hero-actions">
-        <a href="#jobs" class="lp-btn lp-btn-primary lp-btn-lg">Browse Open Positions</a>
-        <a href="#howItWorks" class="lp-btn lp-btn-hero-outline lp-btn-lg">Learn How It Works</a>
+        <a href="#jobs" class="lp-btn lp-btn-primary lp-btn-lg">Explore Jobs</a>
+        <button class="lp-btn lp-btn-hero-outline lp-btn-lg" onclick="showLoginModal()">Refer Candidate</button>
       </div>
       <div class="lp-hero-stats">
         <div class="lp-stat">
-          <span class="lp-stat-num" data-count="500">0</span>
-          <div class="lp-stat-label">Open Positions</div>
+          <span class="lp-stat-num" data-count="0" data-lp-stat="openJobs">0</span>
+          <div class="lp-stat-label">Open Jobs</div>
         </div>
         <div class="lp-stat">
-          <span class="lp-stat-num" data-count="10000" data-suffix="+">0</span>
-          <div class="lp-stat-label">Referrals Made</div>
+          <span class="lp-stat-num" data-count="0" data-lp-stat="totalReferrals">0</span>
+          <div class="lp-stat-label">Total Referrals</div>
         </div>
         <div class="lp-stat">
-          <span class="lp-stat-num" data-count="5" data-prefix="₹" data-suffix="Cr+">0</span>
-          <div class="lp-stat-label">Rewards Paid</div>
+          <span class="lp-stat-num" data-count="0" data-lp-stat="successfulHires">0</span>
+          <div class="lp-stat-label">Successful Hires</div>
         </div>
         <div class="lp-stat">
-          <span class="lp-stat-num" data-count="95" data-suffix="%">0</span>
-          <div class="lp-stat-label">Satisfaction</div>
+          <span class="lp-stat-num" data-count="0" data-prefix="₹" data-lp-stat="referralRewardsPaid">0</span>
+          <div class="lp-stat-label">Referral Rewards Paid</div>
         </div>
       </div>
+    </div>
+    <div class="enterprise-hero-visual" aria-label="Live recruitment intelligence dashboard">
+      <div class="enterprise-visual-glow"></div>
+      <div class="enterprise-dashboard">
+        <div class="enterprise-dashboard-top"><span class="enterprise-product-mark"><i></i> Talent intelligence</span><span class="enterprise-live"><b></b> Live</span></div>
+        <div class="enterprise-dashboard-main">
+          <div class="enterprise-candidate-card"><div class="enterprise-avatar">AM</div><div><strong>Ananya Menon</strong><small>Senior Data Engineer</small></div><span class="enterprise-score">94%</span></div>
+          <div class="enterprise-match-panel"><div class="enterprise-match-head"><span>AI Match Score</span><strong>94</strong></div><div class="enterprise-match-ring"><span>Strong fit</span></div><div class="enterprise-skill-list"><i>Python</i><i>Azure</i><i>SQL</i><i>+4</i></div></div>
+          <div class="enterprise-chart"><div class="enterprise-chart-head"><span>Hiring analytics</span><small>Last 30 days</small></div><div class="enterprise-bars"><i style="height:35%"></i><i style="height:58%"></i><i style="height:46%"></i><i style="height:76%"></i><i style="height:62%"></i><i style="height:92%"></i><i style="height:72%"></i></div></div>
+        </div>
+        <div class="enterprise-workflow"><span class="active">Referral</span><i></i><span class="active">AI Screen</span><i></i><span>Interview</span><i></i><span>Hire</span></div>
+      </div>
+      <div class="enterprise-float enterprise-float-one"><span class="enterprise-mini-avatar teal">RK</span><div><strong>Resume screened</strong><small>Skills mapped to role</small></div><b>✓</b></div>
+      <div class="enterprise-float enterprise-float-two"><span class="enterprise-mini-avatar blue">SV</span><div><strong>Interview ready</strong><small>92% role alignment</small></div></div>
     </div>
   </section>`;
 }
@@ -138,14 +169,22 @@ function lpShowcaseCard(){
             </div>
 
             <div class="sc-visual">
-              <div class="sc-dashboard">
+              <div class="sc-video-halo"></div>
+              <div class="sc-dashboard sc-video-frame">
                 <div class="sc-dash-header">
                   <div class="sc-dash-dot sc-dash-dot-r"></div>
                   <div class="sc-dash-dot sc-dash-dot-y"></div>
                   <div class="sc-dash-dot sc-dash-dot-g"></div>
-                  <span class="sc-dash-title">Referral Dashboard</span>
+                  <span class="sc-dash-title">MuraAI Intelligence</span>
+                  <span class="sc-video-live"><i></i> LIVE</span>
                 </div>
+                <div class="sc-video-grid"></div>
+                <div class="sc-video-orbit sc-video-orbit-a"></div>
+                <div class="sc-video-orbit sc-video-orbit-b"></div>
+                <div class="sc-video-core"><span>AI</span></div>
+                <div class="sc-video-scan"></div>
                 <div class="sc-dash-body">
+                  <div class="sc-video-caption"><span>Candidate intelligence stream</span><strong>Analysing in real time</strong></div>
                   <div class="sc-dash-row">
                     <div class="sc-dash-stat">
                       <div class="sc-dash-stat-icon" style="background:linear-gradient(135deg,#1E40AF,#3B82F6);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
@@ -205,12 +244,17 @@ function initShowcaseCard(){
     const rect = scene.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width - 0.5;
     const y = (e.clientY - rect.top) / rect.height - 0.5;
-    targetX = y * -12;
-    targetY = x * 12;
+    targetX = y * -14;
+    targetY = x * 14;
     const glow = scene.querySelector('.sc-glow');
     if(glow){
       glow.style.opacity = '1';
-      glow.style.background = `radial-gradient(600px circle at ${e.clientX - rect.left}px ${e.clientY - rect.top}px, rgba(30,64,175,0.12), transparent 60%)`;
+      glow.style.background = `radial-gradient(600px circle at ${e.clientX - rect.left}px ${e.clientY - rect.top}px, rgba(30,64,175,0.15), transparent 60%)`;
+    }
+    const card = document.getElementById('scCard');
+    if(card){
+      card.style.setProperty('--gx', ((e.clientX - rect.left) / rect.width * 100) + '%');
+      card.style.setProperty('--gy', ((e.clientY - rect.top) / rect.height * 100) + '%');
     }
   });
 
@@ -317,14 +361,13 @@ function renderLandingJobCards(){
   if(!jobs.length) return `<div class="lp-empty">No jobs match your search. Try adjusting your filters.</div>`;
 
   return jobs.map(j => {
-    const gradIdx = Math.abs(hashStr(j.id)) % GRADS.length;
     const posted = j.posted ? new Date(j.posted) : null;
     const daysAgo = posted ? Math.floor((Date.now() - posted.getTime()) / 86400000) : null;
     const closingSoon = daysAgo !== null && daysAgo > 20;
     return `
     <div class="lp-job-card">
       <div class="lp-job-card-top">
-        <div class="lp-job-icon" style="background:${GRADS[gradIdx]};">${(j.title||'J')[0]}</div>
+        <div class="lp-job-icon">${(j.title||'J')[0]}</div>
         <div class="lp-job-card-info">
           <div class="lp-job-title">${j.title}</div>
           <div class="lp-job-dept">${j.dept || 'General'}</div>
@@ -333,29 +376,32 @@ function renderLandingJobCards(){
       </div>
       <div class="lp-job-meta">
         <span class="lp-job-meta-item">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
           ${j.location || 'Remote'}
         </span>
         <span class="lp-job-meta-item">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-          ${j.exp || 'Any'} yrs
-        </span>
-        <span class="lp-job-meta-item">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
           ${j.type || 'Full-time'}
         </span>
         <span class="lp-job-meta-item">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          ${(j.bonus||0).toLocaleString('en-IN')} bonus
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M20.66 7A10 10 0 0 0 14 2v6h6.66z"/></svg>
+          ${j.exp || 'Any'} yrs
+        </span>
+        <span class="lp-job-meta-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          ${daysAgo !== null ? (daysAgo === 0 ? 'Posted today' : `${daysAgo}d ago`) : 'Just posted'}
         </span>
       </div>
-      <div class="lp-job-skills">${(j.skills||[]).slice(0,5).map(s=>`<span class="lp-skill-tag">${s}</span>`).join('')}</div>
+      <div class="lp-job-skills">${(j.skills||[]).slice(0,4).map(s=>`<span class="lp-skill-tag">${s}</span>`).join('')}</div>
+      <div class="lp-job-bonus">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <span>Referral Bonus</span>
+        <strong>₹${(j.bonus||0).toLocaleString('en-IN')}</strong>
+      </div>
       <div class="lp-job-footer">
-        <span class="lp-job-date">${daysAgo !== null ? (daysAgo === 0 ? 'Posted today' : `${daysAgo}d ago`) : ''}</span>
         <div class="lp-job-actions">
           <button class="lp-btn lp-btn-sm lp-btn-outline" onclick="showJobDetail('${j.id}')">View Details</button>
-          ${getToken() ? `<button class="lp-btn lp-btn-sm lp-btn-primary" onclick="showApplyModal('${j.id}')">Apply</button>` : ''}
-          <button class="lp-btn lp-btn-sm lp-btn-indigo" onclick="showReferralModal('${j.id}')">Refer Now</button>
+          <button class="lp-btn lp-btn-sm lp-btn-primary" onclick="showReferralModal('${j.id}')">Refer Candidate</button>
         </div>
       </div>
     </div>`;
@@ -437,12 +483,12 @@ function lpHowItWorks(){
 /* ================================ Why Refer Through Us ================================ */
 function lpWhyRefer(){
   const features = [
-    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M20.66 7A10 10 0 0 0 14 2v6h6.66z"/></svg>`, title: 'AI Resume Matching', desc: 'Intelligent matching that analyzes skills, experience, and cultural fit to connect the right candidates with the right roles.', videoBg: 'linear-gradient(135deg, rgba(37,99,235,0.12), rgba(8,145,178,0.08))' },
-    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`, title: 'Quick Referral Process', desc: 'Submit a referral in under 2 minutes. Our simplified workflow eliminates unnecessary friction and paperwork.', videoBg: 'linear-gradient(135deg, rgba(5,150,105,0.12), rgba(16,185,129,0.08))' },
-    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`, title: 'Real-Time Tracking', desc: 'Track every referral from submission to onboarding with live status updates and transparent pipeline visibility.', videoBg: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(167,139,250,0.08))' },
-    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`, title: 'Reward Up to ₹1 Lakh', desc: 'Earn competitive referral bonuses for every successful hire. The more you refer, the more you earn.', videoBg: 'linear-gradient(135deg, rgba(217,119,6,0.12), rgba(245,158,11,0.08))' },
-    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`, title: 'Transparent Process', desc: 'Complete visibility into where your referral stands at every stage. No more guessing or follow-up emails.', videoBg: 'linear-gradient(135deg, rgba(37,99,235,0.12), rgba(59,130,246,0.08))' },
-    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>`, title: 'Career Growth', desc: 'Help your network grow while advancing your own career. Build your reputation as a top referrer in the organization.', videoBg: 'linear-gradient(135deg, rgba(8,145,178,0.12), rgba(5,150,105,0.08))' }
+    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M20.66 7A10 10 0 0 0 14 2v6h6.66z"/></svg>`, title: 'AI Resume Matching', desc: 'Intelligent matching that analyzes skills, experience, and cultural fit to connect the right candidates with the right roles.' },
+    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`, title: 'Quick Referral Process', desc: 'Submit a referral in under 2 minutes. Our simplified workflow eliminates unnecessary friction and paperwork.' },
+    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`, title: 'Real-Time Tracking', desc: 'Track every referral from submission to onboarding with live status updates and transparent pipeline visibility.' },
+    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`, title: 'Reward Up to ₹1 Lakh', desc: 'Earn competitive referral bonuses for every successful hire. The more you refer, the more you earn.' },
+    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`, title: 'Transparent Process', desc: 'Complete visibility into where your referral stands at every stage. No more guessing or follow-up emails.' },
+    { icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>`, title: 'Career Growth', desc: 'Help your network grow while advancing your own career. Build your reputation as a top referrer in the organization.' }
   ];
   return `
   <section class="lp-section" id="whyRefer">
@@ -452,21 +498,14 @@ function lpWhyRefer(){
         <h2 class="lp-section-title">Why Refer Through MuraAI</h2>
         <p class="lp-section-sub">We make employee referrals smarter, faster, and more rewarding.</p>
       </div>
-      <div class="lp-features-grid lp-video-cards">
-        ${features.map((f, i) => {
-          const borders = ['#2563EB','#059669','#7C3AED','#D97706','#3B82F6','#0891B2'];
-          return `
-          <div class="lp-video-card" style="--card-border:${borders[i]};--card-bg:${f.videoBg};">
-            <div class="lp-video-card-bg"></div>
-            <div class="lp-video-card-shine"></div>
-            <div class="lp-video-card-content">
-              <div class="lp-video-card-icon" style="background:${borders[i]}22;color:${borders[i]};">${f.icon}</div>
-              <h3 class="lp-video-card-title">${f.title}</h3>
-              <p class="lp-video-card-desc">${f.desc}</p>
-              <div class="lp-video-card-bar" style="background:${borders[i]};"></div>
-            </div>
-          </div>`;
-        }).join('')}
+      <div class="lp-features-grid">
+        ${features.map(f => `
+          <div class="lp-feature-card">
+            <div class="lp-feature-icon">${f.icon}</div>
+            <h3 class="lp-feature-title">${f.title}</h3>
+            <p class="lp-feature-desc">${f.desc}</p>
+          </div>
+        `).join('')}
       </div>
     </div>
   </section>`;
@@ -645,13 +684,12 @@ function lpFooter(){
 /* ================================ Job Detail Modal ================================ */
 function showJobDetail(jobId){
   const j = _landingJobs.find(x=>x.id===jobId);
-  if(!j) return;
-  const gradIdx = Math.abs(hashStr(j.id)) % GRADS.length;
+  if(!j){ toast('Job details could not be loaded. Please refresh the page.', 'amber'); return; }
   const modal = document.getElementById('landingModals');
   modal.innerHTML = `
   <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
     <div class="lp-modal pop-in">
-      <div class="lp-modal-header" style="background:${GRADS[gradIdx]};">
+      <div class="lp-modal-header">
         <div>
           <h2 class="lp-modal-title">${j.title}</h2>
           <div class="lp-modal-sub">${j.dept} &middot; ${j.location} &middot; ${j.type || 'Full-time'}</div>
@@ -689,7 +727,6 @@ function showJobDetail(jobId){
           </ul>
         </div>
         <div class="lp-detail-actions">
-          ${getToken() ? `<button class="lp-btn lp-btn-outline" onclick="this.closest('.lp-modal-overlay').remove();showApplyModal('${j.id}')">Apply</button>` : `<button class="lp-btn lp-btn-primary" onclick="this.closest('.lp-modal-overlay').remove();showLoginModal()">Sign In to Apply</button>`}
           <button class="lp-btn lp-btn-primary" onclick="this.closest('.lp-modal-overlay').remove();showReferralModal('${j.id}')">Refer Now</button>
         </div>
       </div>
@@ -708,27 +745,34 @@ function showApplyModal(jobId){
     modal.innerHTML = `
     <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
       <div class="lp-modal lp-modal-sm pop-in">
-        <div class="lp-modal-header" style="background:linear-gradient(135deg,#1E3A8A,#1E40AF,#2563EB);">
+        <div class="lp-modal-header">
           <div>
-            <h2 class="lp-modal-title">Sign In Required</h2>
-            <div class="lp-modal-sub">Internal employees only</div>
+            <h2 class="lp-modal-title">Candidate Sign In</h2>
+            <div class="lp-modal-sub">Sign in with your candidate account to apply</div>
           </div>
           <button class="lp-modal-close" onclick="this.closest('.lp-modal-overlay').remove()">&times;</button>
         </div>
-        <div class="lp-modal-body" style="text-align:center;padding:28px;">
-          <p style="color:var(--ink-soft);font-size:14px;margin-bottom:20px;">Please sign in with your employee account to apply for this position.</p>
-          <button class="lp-btn lp-btn-primary lp-btn-lg" onclick="this.closest('.lp-modal-overlay').remove();showLoginModal()">Employee Sign In</button>
+        <div class="lp-modal-body">
+          <div class="lp-auth-tabs">
+            <button class="lp-auth-tab lp-auth-tab-active" onclick="showApplyModal('${jobId}')" id="lpApplyLoginTab">Sign In</button>
+            <button class="lp-auth-tab" onclick="showApplyRegisterForJob('${jobId}')">Register</button>
+          </div>
+          <form id="lpApplyLoginForm" onsubmit="handleLpApplyLogin(event,'${jobId}')">
+            <div class="lp-form-group"><label class="lp-label">Email</label><input class="lp-input" name="email" type="email" required placeholder="your@email.com" id="lpApplyLoginEmail"/></div>
+            <div class="lp-form-group"><label class="lp-label">Password</label><input class="lp-input" name="password" type="password" required placeholder="Enter your password" id="lpApplyLoginPass"/></div>
+            <div class="lp-form-actions"><button type="submit" class="lp-btn lp-btn-primary" style="width:100%;justify-content:center;" id="lpApplyLoginBtn">Sign In</button></div>
+            <div id="lpApplyLoginError" class="lp-form-error"></div>
+          </form>
         </div>
       </div>
     </div>`;
     return;
   }
 
-  const emp = currentUserEmployee();
   modal.innerHTML = `
   <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
     <div class="lp-modal pop-in">
-      <div class="lp-modal-header" style="background:linear-gradient(135deg,#1E3A8A,#1E40AF,#2563EB);">
+      <div class="lp-modal-header">
         <div>
           <h2 class="lp-modal-title">Apply for ${j.title}</h2>
           <div class="lp-modal-sub">${j.dept} &middot; ${j.location}</div>
@@ -759,11 +803,6 @@ function showApplyModal(jobId){
             <div class="lp-form-group"><label class="lp-label">Education</label><input class="lp-input" name="education" placeholder="e.g. B.Tech Computer Science"/></div>
           </div>
           <div class="lp-form-group"><label class="lp-label">Skills (comma separated)</label><input class="lp-input" name="skills" placeholder="e.g. Python, React, AWS, SQL"/></div>
-          <div class="lp-form-group">
-            <div style="padding:12px;border-radius:8px;background:rgba(37,99,235,0.06);border:1px solid rgba(37,99,235,0.12);font-size:12.5px;">
-              <strong>Applying as:</strong> ${state.user?.name} (${state.user?.email}) &middot; Dept: ${emp?.dept || '—'}
-            </div>
-          </div>
           <div class="lp-form-actions">
             <button type="button" class="lp-btn lp-btn-outline" onclick="this.closest('.lp-modal-overlay').remove()">Cancel</button>
             <button type="submit" class="lp-btn lp-btn-primary" id="lpApplySubmitBtn">Submit Application</button>
@@ -775,6 +814,72 @@ function showApplyModal(jobId){
   </div>`;
 }
 
+function showApplyRegisterForJob(jobId){
+  const modal = document.getElementById('landingModals');
+  modal.innerHTML = `
+  <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="lp-modal lp-modal-sm pop-in">
+      <div class="lp-modal-header">
+        <div>
+          <h2 class="lp-modal-title">Create Candidate Account</h2>
+          <div class="lp-modal-sub">Join MuraAI Refer to apply</div>
+        </div>
+        <button class="lp-modal-close" onclick="this.closest('.lp-modal-overlay').remove()">&times;</button>
+      </div>
+      <div class="lp-modal-body">
+        <div class="lp-auth-tabs">
+          <button class="lp-auth-tab" onclick="showApplyModal('${jobId}')">Sign In</button>
+          <button class="lp-auth-tab lp-auth-tab-active">Register</button>
+        </div>
+        <form id="lpApplyRegForm" onsubmit="handleLpApplyRegister(event,'${jobId}')">
+          <div class="lp-form-group"><label class="lp-label">Full Name</label><input class="lp-input" name="name" required placeholder="Your full name" id="lpApplyRegName"/></div>
+          <div class="lp-form-group"><label class="lp-label">Email</label><input class="lp-input" name="email" type="email" required placeholder="your@email.com" id="lpApplyRegEmail"/></div>
+          <div class="lp-form-group"><label class="lp-label">Password</label><input class="lp-input" name="password" type="password" required placeholder="Min 8 chars" id="lpApplyRegPass"/></div>
+          <div class="lp-form-actions"><button type="submit" class="lp-btn lp-btn-primary" style="width:100%;justify-content:center;" id="lpApplyRegBtn">Create Account</button></div>
+          <div id="lpApplyRegError" class="lp-form-error"></div>
+        </form>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function handleLpApplyLogin(e, jobId){
+  e.preventDefault();
+  const btn = document.getElementById('lpApplyLoginBtn');
+  const errEl = document.getElementById('lpApplyLoginError');
+  btn.disabled = true; btn.textContent = 'Signing in...'; errEl.textContent = '';
+  try{
+    const email = document.getElementById('lpApplyLoginEmail').value.trim();
+    const password = document.getElementById('lpApplyLoginPass').value;
+    const data = await api('/api/candidates/login', {method:'POST', body:{email, password}, auth:false});
+    setToken(data.access_token);
+    state.user = data.user; state.role = 'candidate';
+    showApplyModal(jobId);
+  }catch(err){
+    errEl.textContent = err.message || 'Login failed';
+    btn.disabled = false; btn.textContent = 'Sign In';
+  }
+}
+
+async function handleLpApplyRegister(e, jobId){
+  e.preventDefault();
+  const btn = document.getElementById('lpApplyRegBtn');
+  const errEl = document.getElementById('lpApplyRegError');
+  btn.disabled = true; btn.textContent = 'Creating account...'; errEl.textContent = '';
+  try{
+    const name = document.getElementById('lpApplyRegName').value.trim();
+    const email = document.getElementById('lpApplyRegEmail').value.trim();
+    const password = document.getElementById('lpApplyRegPass').value;
+    const data = await api('/api/candidates/register', {method:'POST', body:{name, email, password, phone:''}, auth:false});
+    setToken(data.access_token);
+    state.user = data.user; state.role = 'candidate';
+    showApplyModal(jobId);
+  }catch(err){
+    errEl.textContent = err.message || 'Registration failed';
+    btn.disabled = false; btn.textContent = 'Create Account';
+  }
+}
+
 async function handleCandidateApply(e, jobId){
   e.preventDefault();
   const btn = document.getElementById('lpApplySubmitBtn');
@@ -782,9 +887,9 @@ async function handleCandidateApply(e, jobId){
   btn.disabled = true; btn.textContent = 'Submitting...';
   const fd = new FormData(e.target);
   const job = _landingJobs.find(x=>x.id===jobId);
-  const emp = currentUserEmployee();
 
   const applyBody = {
+    jobId,
     candidateName: state.user?.name || 'Candidate',
     email: state.user?.email || '',
     phone: fd.get('phone') || '',
@@ -796,13 +901,11 @@ async function handleCandidateApply(e, jobId){
     linkedin: fd.get('linkedin') || '',
     github: fd.get('github') || '',
     portfolio: fd.get('portfolio') || '',
-    jobId,
-    referredBy: emp?.id || state.user?.employeeId || '',
-    relationshipToReferrer: 'self',
+    referredBy: 'self',
   };
 
   try{
-    const appResult = await api('/api/referrals', { method:'POST', body: applyBody });
+    const appResult = await api('/api/candidates/apply', { method:'POST', body: applyBody });
 
     const appJob = _landingJobs.find(x=>x.id===jobId);
     const confirmId = appResult.id || '—';
@@ -820,8 +923,8 @@ async function handleCandidateApply(e, jobId){
         </div>
       </div>
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-        <button class="lp-btn lp-btn-primary lp-btn-sm" onclick="document.querySelector('.lp-modal-overlay')?.remove();nav('tracking')">Track Application</button>
-        <button class="lp-btn lp-btn-outline lp-btn-sm" onclick="document.querySelector('.lp-modal-overlay')?.remove();nav('dashboard')">Go to Dashboard</button>
+        <button class="lp-btn lp-btn-primary lp-btn-sm" onclick="document.querySelector('.lp-modal-overlay')?.remove();_cpLastApplication={id:'${confirmId}',jobId:'${jobId}',jobTitle:'${(appJob?.title||'').replace(/'/g,"\\'")}'};_cpView='confirmation';render();">Track Application</button>
+        <button class="lp-btn lp-btn-outline lp-btn-sm" onclick="document.querySelector('.lp-modal-overlay')?.remove();_cpView='dashboard';loadCandidateData().then(()=>render());">Go to Dashboard</button>
       </div>
     </div>`;
 
@@ -874,7 +977,7 @@ function showReferralModal(jobId){
     modal.innerHTML = `
     <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
       <div class="lp-modal lp-modal-sm pop-in">
-        <div class="lp-modal-header" style="background:linear-gradient(135deg,#1E40AF,#38BDF8);">
+        <div class="lp-modal-header">
           <div>
             <h2 class="lp-modal-title">Sign In Required</h2>
             <div class="lp-modal-sub">Sign in as an employee to refer candidates</div>
@@ -882,8 +985,9 @@ function showReferralModal(jobId){
           <button class="lp-modal-close" onclick="this.closest('.lp-modal-overlay').remove()">&times;</button>
         </div>
         <div class="lp-modal-body" style="text-align:center;padding:32px 28px;">
-          <p style="color:var(--ink-soft);font-size:14px;margin-bottom:20px;">You need an employee account to generate referral links and track your referrals.</p>
+          <p style="color:var(--text-secondary);font-size:14px;margin-bottom:20px;">You need an employee account to generate referral links and track your referrals.</p>
           <button class="lp-btn lp-btn-primary lp-btn-lg" onclick="this.closest('.lp-modal-overlay').remove();showLoginModal()">Sign In as Employee</button>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:14px;">Access is managed by your organization. Contact HR if you need an account.</p>
         </div>
       </div>
     </div>`;
@@ -894,7 +998,7 @@ function showReferralModal(jobId){
   modal.innerHTML = `
   <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
     <div class="lp-modal lp-modal-sm pop-in">
-      <div class="lp-modal-header" style="background:linear-gradient(135deg,#1E40AF,#38BDF8);">
+      <div class="lp-modal-header">
         <div>
           <h2 class="lp-modal-title">Refer a Candidate</h2>
           <div class="lp-modal-sub">For: ${j.title} (${j.dept})</div>
@@ -973,124 +1077,186 @@ async function submitLpReferral(e, jobId){
 }
 
 /* ================================ Login Modal ================================ */
+
 function showLoginModal(){
   const modal = document.getElementById('landingModals');
   modal.innerHTML = `
-  <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
-    <div class="lp-modal lp-modal-sm pop-in">
-      <div class="lp-modal-header" style="background:linear-gradient(135deg,#1E3A8A,#1E40AF,#2563EB);">
-        <div>
-          <h2 class="lp-modal-title">Employee Sign In</h2>
-          <div class="lp-modal-sub">Internal employee access only</div>
-        </div>
-        <button class="lp-modal-close" onclick="this.closest('.lp-modal-overlay').remove()">&times;</button>
-      </div>
-      <div class="lp-modal-body" style="padding:28px;">
-        <div id="lpLoginError" style="color:#DC2626;font-size:12.5px;margin-bottom:12px;display:none;"></div>
-        <form id="lpEmailPassForm" onsubmit="handleEmailLogin(event)">
-          <div class="lp-form-group">
-            <label class="lp-label">Email Address</label>
-            <input class="lp-input" type="email" name="email" required placeholder="you@company.com" style="width:100%;"/>
-          </div>
-          <div class="lp-form-group">
-            <label class="lp-label">Password</label>
-            <input class="lp-input" type="password" name="password" required placeholder="Enter your password" style="width:100%;"/>
-          </div>
-          <button type="submit" class="lp-btn lp-btn-primary" style="width:100%;justify-content:center;padding:11px;font-size:14px;margin-top:4px;" id="lpSignInBtn">Sign In</button>
-        </form>
-        <div style="text-align:right;margin:8px 0 14px;">
-          <a href="#" onclick="showForgotPasswordModal();event.preventDefault()" style="color:var(--primary);font-size:12.5px;font-weight:600;text-decoration:none;">Forgot Password?</a>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;margin:14px 0;">
-          <div style="flex:1;height:1px;background:var(--border);"></div>
-          <span style="font-size:12px;color:var(--text-muted);">OR</span>
-          <div style="flex:1;height:1px;background:var(--border);"></div>
-        </div>
-        <button class="lp-btn lp-btn-outline" style="width:100%;justify-content:center;gap:10px;padding:11px;font-size:14px;" onclick="handleMicrosoftSSO()">
-          <svg width="18" height="18" viewBox="0 0 21 21" fill="none"><rect x="1" y="1" width="9" height="9" fill="#F25022"/><rect x="11" y="1" width="9" height="9" fill="#7FBA00"/><rect x="1" y="11" width="9" height="9" fill="#00A4EF"/><rect x="11" y="11" width="9" height="9" fill="#FFB900"/></svg>
-          Sign in with Microsoft
+  <div class="lp-modal-overlay enterprise-login-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="enterprise-login-card pop-in" role="dialog" aria-modal="true" aria-labelledby="enterpriseLoginTitle">
+      <button class="enterprise-login-close" aria-label="Close sign in" onclick="this.closest('.lp-modal-overlay').remove()">&times;</button>
+      <div class="enterprise-login-content">
+        <div class="enterprise-login-eyebrow"><span></span> MURAAI REFER</div>
+        <h2 id="enterpriseLoginTitle">Welcome to your<br><em>talent network.</em></h2>
+        <button class="enterprise-microsoft-button" onclick="ssoLogin()">
+          <span class="enterprise-ms-mark"><i></i><i></i><i></i><i></i></span>
+          <span>Continue with Microsoft</span>
+          <b>→</b>
         </button>
+        <div class="enterprise-login-divider"><span>OR</span></div>
+        <form class="enterprise-email-login" id="lpLoginForm" onsubmit="handleLpLogin(event)">
+          <label class="enterprise-field-label" for="lpLoginEmail">Email Address</label>
+          <div class="enterprise-input-wrap">
+            <input id="lpLoginEmail" type="email" required autocomplete="email" placeholder="name@company.com">
+          </div>
+          <div class="enterprise-password-label"><label for="lpLoginPass">Password</label></div>
+          <div class="enterprise-input-wrap enterprise-password-wrap">
+            <input id="lpLoginPass" type="password" required autocomplete="current-password" placeholder="Enter your password">
+            <button type="button" class="enterprise-password-toggle" id="lpTogglePass" aria-label="Show password" onclick="toggleLpPassword()">
+              <svg class="eye-open" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>
+            </button>
+          </div>
+          <div class="enterprise-forgot-row"><a href="#" class="enterprise-forgot-link" onclick="showForgotModal();event.preventDefault()">Forgot password?</a></div>
+          <button type="submit" class="enterprise-email-button" id="lpLoginBtn">Sign in</button>
+          <div id="lpLoginError" class="lp-form-error"></div>
+        </form>
+        <div class="enterprise-login-help">Need access? <span>Contact your HR administrator.</span></div>
+      </div>
+      <div class="enterprise-login-illustration" aria-hidden="true">
+        <div class="enterprise-illustration-orbit orbit-a"></div><div class="enterprise-illustration-orbit orbit-b"></div>
+        <div class="enterprise-illustration-core">MuraAI</div>
+        <div class="enterprise-illustration-card card-a"><span>92%</span><small>Role match</small></div>
+        <div class="enterprise-illustration-card card-b"><span>18</span><small>Open roles</small></div>
+        <div class="enterprise-illustration-line"></div>
+        <div class="enterprise-illustration-caption"><b>Hiring intelligence</b><span>Connected. Secure. Real time.</span></div>
       </div>
     </div>
   </div>`;
 }
 
-async function handleEmailLogin(e){
-  e.preventDefault();
-  const btn = document.getElementById('lpSignInBtn');
-  const errEl = document.getElementById('lpLoginError');
-  const email = e.target.email.value.trim();
-  const password = e.target.password.value;
-  if(!email || !password){ errEl.textContent='Please enter email and password'; errEl.style.display='block'; return; }
-  btn.disabled=true; btn.textContent='Signing in...'; errEl.style.display='none';
-  try{
-    const data = await api('/api/auth/login', {method:'POST', body:{email, password}, auth:false});
-    setToken(data.access_token, true);
-    state.user = data.user || await api('/api/auth/me');
-    state.role = state.user.role;
-    document.querySelector('.lp-modal-overlay')?.remove();
-    await loadAllData();
-    state._loaded = true;
-    render();
-    startPolling();
-  }catch(err){
-    errEl.textContent = err.message || 'Invalid credentials';
-    errEl.style.display = 'block';
-    btn.disabled=false; btn.textContent='Sign In';
-  }
-}
-
-function showForgotPasswordModal(){
+function showLpEmployeeRegister(){
   const modal = document.getElementById('landingModals');
   modal.innerHTML = `
   <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
     <div class="lp-modal lp-modal-sm pop-in">
-      <div class="lp-modal-header" style="background:linear-gradient(135deg,#1E3A8A,#1E40AF,#2563EB);">
+      <div class="lp-modal-header">
         <div>
-          <h2 class="lp-modal-title">Reset Password</h2>
-          <div class="lp-modal-sub">Enter your email to receive a reset link</div>
+          <h2 class="lp-modal-title">Create Employee Account</h2>
+          <div class="lp-modal-sub">Join MuraAI Refer as an Employee</div>
         </div>
         <button class="lp-modal-close" onclick="this.closest('.lp-modal-overlay').remove()">&times;</button>
       </div>
-      <div class="lp-modal-body" style="padding:28px;">
-        <div id="lpForgotError" style="color:#DC2626;font-size:12.5px;margin-bottom:12px;display:none;"></div>
-        <div id="lpForgotSuccess" style="color:#059669;font-size:12.5px;margin-bottom:12px;display:none;"></div>
-        <form id="lpForgotForm" onsubmit="handleForgotPassword(event)">
-          <div class="lp-form-group">
-            <label class="lp-label">Email Address</label>
-            <input class="lp-input" type="email" name="email" required placeholder="you@company.com" style="width:100%;"/>
+      <div class="lp-modal-body">
+        <form id="lpEmpRegForm" onsubmit="handleLpEmployeeRegister(event)">
+          <div class="lp-form-group"><label class="lp-label">Full Name</label><input class="lp-input" name="name" required placeholder="Your full name" id="lpEmpRegName"/></div>
+          <div class="lp-form-group"><label class="lp-label">Work Email</label><input class="lp-input" name="email" type="email" required placeholder="you@company.com" id="lpEmpRegEmail"/></div>
+          <div class="lp-form-group"><label class="lp-label">Password</label><input class="lp-input" name="password" type="password" required placeholder="Min 8 chars, upper, lower, number, symbol" id="lpEmpRegPass"/></div>
+          <div class="lp-form-actions" style="flex-direction:column;gap:10px;">
+            <button type="submit" class="lp-btn lp-btn-primary" style="width:100%;justify-content:center;" id="lpEmpRegBtn">Create Account</button>
           </div>
-          <button type="submit" class="lp-btn lp-btn-primary" style="width:100%;justify-content:center;padding:11px;font-size:14px;" id="lpForgotBtn">Send Reset Link</button>
+          <div id="lpEmpRegError" class="lp-form-error"></div>
+          <div style="text-align:center;margin-top:14px;font-size:13px;">
+            <a href="#" onclick="showLoginModal();event.preventDefault()" style="color:var(--primary);font-weight:600;">Already have an account? Sign In</a>
+          </div>
         </form>
-        <div style="text-align:center;margin-top:14px;font-size:13px;">
-          <a href="#" onclick="showLoginModal();event.preventDefault()" style="color:var(--primary);font-weight:600;text-decoration:none;">Back to Sign In</a>
-        </div>
       </div>
     </div>
   </div>`;
 }
 
-async function handleForgotPassword(e){
+async function handleLpEmployeeRegister(e){
   e.preventDefault();
-  const btn = document.getElementById('lpForgotBtn');
-  const errEl = document.getElementById('lpForgotError');
-  const successEl = document.getElementById('lpForgotSuccess');
-  const email = e.target.email.value.trim();
-  if(!email){ errEl.textContent='Please enter your email'; errEl.style.display='block'; return; }
-  btn.disabled=true; btn.textContent='Sending...'; errEl.style.display='none'; successEl.style.display='none';
+  const btn = document.getElementById('lpEmpRegBtn');
+  const errEl = document.getElementById('lpEmpRegError');
+  btn.disabled = true; btn.textContent = 'Creating account...'; errEl.textContent = '';
   try{
-    await api('/api/auth/forgot-password', {method:'POST', body:{email}, auth:false});
-    successEl.textContent='If an account exists with this email, a reset link has been sent.'; successEl.style.display='block';
-    btn.textContent='Link Sent';
+    const name = document.getElementById('lpEmpRegName').value.trim();
+    const email = document.getElementById('lpEmpRegEmail').value.trim();
+    const password = document.getElementById('lpEmpRegPass').value;
+    const data = await api('/api/auth/register', {method:'POST', body:{name, email, password, role:'employee', dept:'General'}, auth:false});
+    setToken(data.access_token);
+    state.user = data.user;
+    state.role = data.user.role;
+    document.querySelector('.lp-modal-overlay')?.remove();
+    toast('Account created! Welcome to MuraAI Refer.', 'success');
+    window.location.reload();
   }catch(err){
-    errEl.textContent = err.message || 'Could not send reset link';
-    errEl.style.display = 'block';
-    btn.disabled=false; btn.textContent='Send Reset Link';
+    errEl.textContent = err.message || 'Registration failed';
+    btn.disabled = false; btn.textContent = 'Create Account';
   }
 }
 
-async function handleMicrosoftSSO(){
-  toast('Microsoft SSO redirect would happen here', 'primary');
+async function handleLpLogin(e){
+  e.preventDefault();
+  const btn = document.getElementById('lpLoginBtn');
+  const errEl = document.getElementById('lpLoginError');
+  btn.disabled = true; btn.textContent = 'Signing in...'; errEl.textContent = '';
+  try{
+    const email = document.getElementById('lpLoginEmail').value.trim();
+    const password = document.getElementById('lpLoginPass').value;
+    const data = await api('/api/auth/login', {method:'POST', body:{email, password}, auth:false});
+    setToken(data.access_token);
+    state.user = data.user;
+    state.role = data.user.role;
+    document.querySelector('.lp-modal-overlay')?.remove();
+    toast('Signed in successfully!', 'success');
+    await loadAllData();
+    render();
+    startPolling();
+    if(state.referPendingJob && state.role !== 'candidate'){ nav('refer'); }
+  }catch(err){
+    errEl.textContent = err.message || 'Login failed';
+    btn.disabled = false; btn.textContent = 'Sign In';
+  }
+}
+
+function ssoLogin(){
+  window.location.href = '/api/auth/microsoft/login';
+}
+
+function toggleLpPassword(){
+  const input = document.getElementById('lpLoginPass');
+  const toggle = document.getElementById('lpTogglePass');
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  toggle.classList.toggle('active', show);
+  toggle.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+}
+
+function showForgotModal(){
+  const modal = document.getElementById('landingModals');
+  modal.innerHTML = `
+  <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="lp-modal lp-modal-sm pop-in">
+      <div class="lp-modal-header">
+        <div>
+          <h2 class="lp-modal-title">Reset Password</h2>
+          <div class="lp-modal-sub">We'll email you a link to get back in</div>
+        </div>
+        <button class="lp-modal-close" onclick="this.closest('.lp-modal-overlay').remove()">&times;</button>
+      </div>
+      <div class="lp-modal-body">
+        <form id="lpForgotForm" onsubmit="handleLpForgot(event)">
+          <div class="lp-form-group"><label class="lp-label">Work Email</label><input class="lp-input" name="email" type="email" required placeholder="you@company.com" id="lpForgotEmail"/></div>
+          <div class="lp-form-actions" style="flex-direction:column;gap:10px;">
+            <button type="submit" class="lp-btn lp-btn-primary" style="width:100%;justify-content:center;" id="lpForgotBtn">Send reset link</button>
+          </div>
+          <div id="lpForgotError" class="lp-form-error"></div>
+          <div id="lpForgotSuccess" style="color:#059669;font-size:12.5px;margin-top:10px;text-align:center;"></div>
+          <div style="text-align:center;margin-top:14px;font-size:13px;">
+            <a href="#" onclick="showLoginModal();event.preventDefault()" style="color:var(--primary);font-weight:600;">Back to sign in</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function handleLpForgot(e){
+  e.preventDefault();
+  const btn = document.getElementById('lpForgotBtn');
+  const errEl = document.getElementById('lpForgotError');
+  const okEl = document.getElementById('lpForgotSuccess');
+  btn.disabled = true; btn.textContent = 'Sending...'; errEl.textContent = ''; okEl.textContent = '';
+  try{
+    const email = document.getElementById('lpForgotEmail').value.trim();
+    const res = await api('/api/auth/forgot-password', {method:'POST', body:{email}, auth:false});
+    okEl.textContent = res.message || 'If an account exists for that email, a reset link has been sent.';
+  }catch(err){
+    errEl.textContent = err.message || 'Could not send reset link';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Send reset link';
+  }
 }
 
 function showResetModal(){
@@ -1098,7 +1264,7 @@ function showResetModal(){
   modal.innerHTML = `
   <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
     <div class="lp-modal lp-modal-sm pop-in">
-      <div class="lp-modal-header" style="background:linear-gradient(135deg,#1E3A8A,#1E40AF,#2563EB);">
+      <div class="lp-modal-header">
         <div>
           <h2 class="lp-modal-title">Choose a New Password</h2>
           <div class="lp-modal-sub">Enter and confirm your new password</div>
@@ -1143,7 +1309,56 @@ async function handleLpReset(e){
   }
 }
 
+function showRegisterModal(){
+  const modal = document.getElementById('landingModals');
+  modal.innerHTML = `
+  <div class="lp-modal-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="lp-modal lp-modal-sm pop-in">
+      <div class="lp-modal-header">
+        <div>
+          <h2 class="lp-modal-title">Create Account</h2>
+          <div class="lp-modal-sub">Join MuraAI Refer as an Employee</div>
+        </div>
+        <button class="lp-modal-close" onclick="this.closest('.lp-modal-overlay').remove()">&times;</button>
+      </div>
+      <div class="lp-modal-body">
+        <form id="lpRegForm" onsubmit="handleLpRegister(event)">
+          <div class="lp-form-group"><label class="lp-label">Full Name</label><input class="lp-input" name="name" required placeholder="Your full name" id="lpRegName"/></div>
+          <div class="lp-form-group"><label class="lp-label">Work Email</label><input class="lp-input" name="email" type="email" required placeholder="you@company.com" id="lpRegEmail"/></div>
+          <div class="lp-form-group"><label class="lp-label">Password</label><input class="lp-input" name="password" type="password" required placeholder="Min 8 chars, upper, lower, number, symbol" id="lpRegPass"/></div>
+          <div class="lp-form-actions" style="flex-direction:column;gap:10px;">
+            <button type="submit" class="lp-btn lp-btn-primary" style="width:100%;justify-content:center;" id="lpRegBtn">Create Account</button>
+          </div>
+          <div id="lpRegError" class="lp-form-error"></div>
+          <div style="text-align:center;margin-top:14px;font-size:13px;">
+            <a href="#" onclick="showLoginModal();event.preventDefault()" style="color:var(--primary);font-weight:600;">Already have an account? Sign In</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>`;
+}
 
+async function handleLpRegister(e){
+  e.preventDefault();
+  const btn = document.getElementById('lpRegBtn');
+  const errEl = document.getElementById('lpRegError');
+  btn.disabled = true; btn.textContent = 'Creating account...'; errEl.textContent = '';
+  try{
+    const name = document.getElementById('lpRegName').value.trim();
+    const email = document.getElementById('lpRegEmail').value.trim();
+    const password = document.getElementById('lpRegPass').value;
+    const data = await api('/api/auth/register', {method:'POST', body:{name, email, password, role:'employee', dept:'General'}, auth:false});
+    setToken(data.access_token);
+    state.user = data.user;
+    state.role = data.user.role;
+    document.querySelector('.lp-modal-overlay')?.remove();
+    toast('Account created! You can now apply for jobs.', 'success');
+  }catch(err){
+    errEl.textContent = err.message || 'Registration failed';
+    btn.disabled = false; btn.textContent = 'Create Account';
+  }
+}
 
 /* ================================ Scroll Effects ================================ */
 function initLandingScroll(){
@@ -1186,6 +1401,13 @@ function initLandingScroll(){
       el.classList.add('lp-reveal');
       el.style.transitionDelay = `${Math.min(i % 6 * 80, 400)}ms`;
       revealObserver.observe(el);
+    });
+    document.querySelectorAll('.lp-feature-card, .lp-step-card').forEach(card=>{
+      card.addEventListener('mousemove', e=>{
+        const rect = card.getBoundingClientRect();
+        card.style.setProperty('--mx', ((e.clientX - rect.left) / rect.width * 100) + '%');
+        card.style.setProperty('--my', ((e.clientY - rect.top) / rect.height * 100) + '%');
+      });
     });
   }, 100);
 }

@@ -1,11 +1,13 @@
 /* ------------------------------- Employee: Refer Candidate ------------------------------- */
 function referCandidateView(){
   const pre = state.lastAnalyzedResume;
+  const pendingJob = state.referPendingJob;
+  state.referPendingJob = null;
   if(state.jobs.length===0){
     return `<div class="glass" style="padding:40px;text-align:center;">
-      <div style="font-size:38px;margin-bottom:10px;">💼</div>
+      <div style="font-size:38px;margin-bottom:10px;"></div>
       <h3 style="margin:0 0 6px;">No open roles to refer into yet</h3>
-      <p style="color:var(--ink-soft);margin:0;">${state.role==='hr' ? 'Post a job first from Manage Jobs.' : 'Check back once HR posts an open role.'}</p>
+      <p style="color:var(--ink-soft);margin:0;">${isHrRole(state.role) ? 'Post a job first from Manage Jobs.' : 'Check back once HR posts an open role.'}</p>
     </div>`;
   }
   return `
@@ -18,12 +20,10 @@ function referCandidateView(){
     </div>
     ${state.aiStatus && !state.aiStatus.available ? `
     <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:10px;background:rgba(217,119,6,0.08);border:1px solid rgba(217,119,6,0.2);margin-bottom:16px;font-size:12.5px;">
-      <span style="font-size:16px;">⚡</span>
       <span style="color:#92400E;"><strong>AI-powered analysis is using built-in heuristics.</strong> Configure an AI provider (Ollama, OpenAI, Anthropic, or Gemini) in Admin → AI Settings for richer insights.</span>
     </div>` : ''}
     ${state.aiStatus && state.aiStatus.available ? `
     <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:10px;background:rgba(5,150,105,0.06);border:1px solid rgba(5,150,105,0.15);margin-bottom:16px;font-size:12.5px;">
-      <span style="font-size:16px;">✨</span>
       <span style="color:#065F46;">AI-powered: <strong>${state.aiStatus.provider}</strong> (${state.aiStatus.model})</span>
     </div>` : ''}
 
@@ -31,7 +31,7 @@ function referCandidateView(){
       <div class="glass" style="padding:22px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
           <h3 style="margin:0;font-size:16px;" class="display">Candidate details</h3>
-          <button class="btn btn-outline" id="autofillBtn" type="button">✨ Autofill from Resume</button>
+          <button class="btn btn-outline" id="autofillBtn" type="button">Autofill from Resume</button>
         </div>
 
         <div id="duplicateWarning"></div>
@@ -60,7 +60,7 @@ function referCandidateView(){
           <div style="margin-top:16px;">
             <label class="field-label">Role you're referring for *</label>
             <select class="input" name="jobId" required>
-              ${state.jobs.map(j=>`<option value="${j.id}" ${pre?.bestJobId===j.id?'selected':''}>${j.title}</option>`).join('')}
+              ${state.jobs.map(j=>`<option value="${j.id}" ${pre?.bestJobId===j.id || pendingJob===j.id?'selected':''}>${j.title}</option>`).join('')}
             </select>
           </div>
           <div style="margin-top:14px;">
@@ -173,13 +173,13 @@ function autofillModalHTML(){
   <div class="modal-overlay" id="autofillModalOverlay">
     <div class="glass-strong pop-in" style="max-width:560px;width:100%;padding:26px;">
       <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px;">
-        <h2 class="display" style="margin:0;font-size:18px;">✨ Autofill from Resume</h2>
+        <h2 class="display" style="margin:0;font-size:18px;">Autofill from Resume</h2>
         <button class="btn btn-ghost" id="closeAutofillModal" style="font-size:18px;padding:4px 10px;">✕</button>
       </div>
       <p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 12px;">Paste the candidate's resume text, or attach a file below — AI extracts everything and fills the form.</p>
       <textarea class="input" id="autofillResumeText" rows="8" placeholder="Paste resume text here…"></textarea>
       <div style="display:flex;gap:10px;margin-top:12px;">
-        <button class="btn btn-outline" id="autofillUploadBtn" type="button">📎 Attach File</button>
+        <button class="btn btn-outline" id="autofillUploadBtn" type="button">Attach File</button>
         <button class="btn btn-primary" id="autofillRunBtn" type="button" style="flex:1;">Parse &amp; Fill Form</button>
       </div>
       <div id="autofillStatus" style="font-size:12.5px;color:var(--ink-soft);margin-top:10px;"></div>
@@ -368,7 +368,7 @@ function bindReferView(){
     try{
       const referral = await submitReferralToBackend(fields);
       state.referrals.unshift(referral);
-      toast(`Referral for ${referral.candidateName} submitted 🎉`, 'success');
+      toast(`Referral for ${referral.candidateName} submitted`, 'success');
     }catch(err){
       toast('Could not submit referral: '+err.message, 'error');
       submitBtn.disabled = false; submitBtn.textContent = 'Submit Referral';

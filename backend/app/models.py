@@ -16,6 +16,8 @@ class Employee(Base):
     dept = Column(String, default="")
     designation = Column(String, default="")
     email = Column(String, unique=True, nullable=False)
+    phone = Column(String, default="")
+    location = Column(String, default="")
     color = Column(String, default="#8B5CF6")
     joined = Column(String, default="")
     is_active = Column(Boolean, default=True)
@@ -31,7 +33,7 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
-    role = Column(String, default="employee")  # 'employee' | 'manager' | 'hr' | 'hr_manager' | 'vp' | 'cto' | 'ceo' | 'system_admin'
+    role = Column(String, default="employee")  # 'employee' | 'manager' | 'hr' | 'hr_manager' | 'chro' | 'vp' | 'cto' | 'ceo' | 'system_admin' | 'admin'
     employee_id = Column(String, ForeignKey("employees.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -52,6 +54,9 @@ class Job(Base):
     status = Column(String, default="Open")
     description = Column(Text, default="")
     posted = Column(DateTime, default=datetime.utcnow)
+    is_deleted = Column(Boolean, default=False)
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(String, default="")
 
     referrals = relationship("Referral", back_populates="job")
 
@@ -96,7 +101,17 @@ class Referral(Base):
     strengths = Column(JSON, default=list)
     weaknesses = Column(JSON, default=list)
     recommendation = Column(String, default="")
-    rank_label = Column(String, default="")  # Top Candidate | Medium | Low
+    rank_label = Column(String, default="")  # Exceptional | Strong | Medium | Low
+    is_deleted = Column(Boolean, default=False)
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(String, default="")
+    screening = Column(JSON, default=dict)  # advanced AI screening / candidate passport data
+
+    # Auto-rejection provenance + evaluation history (HR decision control)
+    auto_rejected = Column(Boolean, default=False)
+    rejection_reason = Column(Text, default="")
+    original_match = Column(Integer, default=0)
+    evaluation_history = Column(JSON, default=list)  # [{action, matchBefore, matchAfter, verdict, by, at, ...}]
 
     referrer = relationship("Employee", back_populates="referrals")
     job = relationship("Job", back_populates="referrals")
@@ -200,6 +215,10 @@ class Interview(Base):
     result = Column(String, default="")  # Pass | Hold | Reject
     feedback = Column(Text, default="")
     score = Column(Integer, default=0)
+    meeting_id = Column(String, default="")  # Microsoft Teams online meeting id
+    is_deleted = Column(Boolean, default=False)
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(String, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -237,3 +256,52 @@ class EmailTemplate(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class EmailRecord(Base):
+    """Audit trail for every email sent through the Email Center — automated,
+    bulk, or AI-generated. Drives the delivery-tracking / Email History screen."""
+    __tablename__ = "email_history"
+    id = Column(String, primary_key=True, default=lambda: gen_id("eml"))
+    to_email = Column(String, nullable=False, index=True)
+    cc = Column(String, default="")
+    bcc = Column(String, default="")
+    subject = Column(String, default="")
+    body = Column(Text, default="")
+    category = Column(String, default="manual")  # automated | bulk | ai | manual
+    email_type = Column(String, default="general")  # rejection | shortlist | interview | offer | general ...
+    status = Column(String, default="sent")  # sent | failed | scheduled
+    error = Column(Text, default="")
+    referral_id = Column(String, default="")
+    job_id = Column(String, default="")
+    created_by = Column(String, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class KnowledgeArticle(Base):
+    """HR / Employee knowledge base articles. Seeded at startup and editable by
+    HR/admin. The AI assistant retrieves these semantically via the vector store."""
+    __tablename__ = "knowledge_articles"
+    id = Column(String, primary_key=True, default=lambda: gen_id("art"))
+    title = Column(String, nullable=False)
+    category = Column(String, default="General")  # Referral Process | Interview | Candidate Mgmt | Email | Policy ...
+    audience = Column(String, default="all")  # all | employee | hr
+    content = Column(Text, default="")
+    tags = Column(JSON, default=list)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = Column(String, default="")
+
+
+class DocumentChunk(Base):
+    """Embedded text chunks for the vector store (semantic RAG over the KB,
+    referral policy, and job descriptions). Embeddings are produced by Ollama
+    and searched with cosine similarity (FAISS when available)."""
+    __tablename__ = "document_chunks"
+    id = Column(String, primary_key=True, default=lambda: gen_id("chk"))
+    source_type = Column(String, default="kb")  # kb | policy | job
+    source_id = Column(String, default="")
+    title = Column(String, default="")
+    content = Column(Text, default="")
+    audience = Column(String, default="all")  # all | employee | hr
+    embedding = Column(Text, default="")  # JSON list of floats
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -11,34 +11,36 @@ function candidateShell(){
   <div style="display:flex;min-height:100vh;">
     <div class="sidebar-desktop" style="width:246px;padding:22px 16px;position:sticky;top:0;height:100vh;">
       <div style="display:flex;align-items:center;gap:10px;padding:6px 10px 26px;">
-        <div style="width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#2563EB,#0891B2);display:flex;align-items:center;justify-content:center;font-size:18px;">✨</div>
-        <div class="display" style="font-weight:700;font-size:16px;">Mura<span class="grad-text">AI</span> Refer</div>
+        <div style="width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,#0F2A5C,#0F766E);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;">M</div>
+        <div>
+          <div style="font-weight:700;font-size:15.5px;color:var(--text-primary);line-height:1.2;">MuraAI <span style="color:var(--primary);">Refer</span></div>
+          <div style="font-size:10.5px;color:var(--text-muted);letter-spacing:0.06em;text-transform:uppercase;">Candidate Portal</div>
+        </div>
       </div>
-      <div style="display:padding-bottom:6px;margin-bottom:8px;font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:1px;font-weight:600;">Candidate Portal</div>
       <div style="display:flex;flex-direction:column;gap:4px;">
-        <div class="sidebar-link ${_cpView==='dashboard'?'active':''}" data-cp-nav="dashboard"><span>📊</span><span>My Dashboard</span></div>
-        <div class="sidebar-link ${_cpView==='applications'?'active':''}" data-cp-nav="applications"><span>📋</span><span>My Applications</span></div>
-        <div class="sidebar-link ${_cpView==='profile'?'active':''}" data-cp-nav="profile"><span>👤</span><span>My Profile</span></div>
-        <div class="sidebar-link ${_cpView==='jobs'?'active':''}" data-cp-nav="jobs"><span>💼</span><span>Browse Jobs</span></div>
-        <div class="sidebar-link" onclick="clearToken();state.user=null;state.role=null;render();" style="margin-top:8px;color:var(--info);cursor:pointer;"><span>🌐</span><span>Back to Home</span></div>
+        <div class="sidebar-link ${_cpView==='dashboard'?'active':''}" data-cp-nav="dashboard">My Dashboard</div>
+        <div class="sidebar-link ${_cpView==='applications'?'active':''}" data-cp-nav="applications">My Applications</div>
+        <div class="sidebar-link ${_cpView==='profile'?'active':''}" data-cp-nav="profile">My Profile</div>
+        <div class="sidebar-link ${_cpView==='jobs'?'active':''}" data-cp-nav="jobs">Browse Jobs</div>
+        <div class="sidebar-link" onclick="clearToken();state.user=null;state.role=null;render();" style="margin-top:8px;color:var(--info);cursor:pointer;">Back to Home</div>
       </div>
     </div>
     <div style="flex:1;min-width:0;">
       <div class="glass" style="margin:16px 18px 0;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:16px;z-index:20;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="font-size:13px;color:var(--ink-soft);">Candidate Portal</div>
-          <div class="chip" style="background:rgba(5,150,105,0.12);color:#059669;">● Active</div>
+          <div class="chip" style="background:rgba(5,150,105,0.12);color:#059669;">Active</div>
         </div>
         <div style="display:flex;align-items:center;gap:14px;">
           <div style="position:relative;">
             <div style="display:flex;align-items:center;gap:8px;cursor:pointer;" id="cpUserMenuBtn">
               <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#1E40AF,#38BDF8);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;">${initials(state.user.name)}</div>
-              <div style="font-size:13px;font-weight:600;">${state.user.name.split(' ')[0]} ▾</div>
+              <div style="font-size:13px;font-weight:600;">${state.user.name.split(' ')[0]}</div>
             </div>
             <div id="cpUserMenuDropdown" class="glass-strong" style="display:none;position:absolute;right:0;top:44px;width:200px;padding:8px;z-index:30;">
-              <div class="sidebar-link" data-cp-nav="profile">👤 My Profile</div>
+              <div class="sidebar-link" data-cp-nav="profile">My Profile</div>
               <div style="height:1px;background:rgba(226,232,240,0.1);margin:4px 0;"></div>
-              <div class="sidebar-link" onclick="clearToken();state.user=null;state.role=null;render();" style="color:var(--coral);">🚪 Logout</div>
+              <div class="sidebar-link" onclick="clearToken();state.user=null;state.role=null;render();" style="color:var(--coral);">Logout</div>
             </div>
           </div>
         </div>
@@ -222,16 +224,15 @@ async function loadCpJobs(){
     if(!openJobs.length){ grid.innerHTML = '<div class="glass" style="padding:30px;text-align:center;color:var(--ink-soft);">No open positions available right now.</div>'; return; }
     grid.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;">
       ${openJobs.map(j => {
-        const gradIdx = Math.abs(hashStr(j.id)) % GRADS.length;
         return `<div class="glass" style="padding:18px;">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-            <div style="width:42px;height:42px;border-radius:12px;background:${GRADS[gradIdx]};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;">${(j.title||'J')[0]}</div>
+            <div style="width:42px;height:42px;border-radius:12px;background:var(--navy);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;">${(j.title||'J')[0]}</div>
             <div><div style="font-weight:700;font-size:15px;">${j.title}</div><div style="font-size:12.5px;color:var(--ink-soft);">${j.dept || 'General'} · ${j.location || 'Remote'}</div></div>
           </div>
           <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;color:var(--ink-soft);">
-            <span>💼 ${j.exp || 'Any'} yrs</span>
-            <span>🕐 ${j.type || 'Full-time'}</span>
-            <span>💰 ₹${(j.bonus||0).toLocaleString('en-IN')} bonus</span>
+            <span>${j.exp || 'Any'} yrs</span>
+            <span>${j.type || 'Full-time'}</span>
+            <span>₹${(j.bonus||0).toLocaleString('en-IN')} bonus</span>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
             ${(j.skills||[]).slice(0,5).map(s=>`<span class="lp-skill-tag">${s}</span>`).join('')}

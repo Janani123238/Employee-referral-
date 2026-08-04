@@ -7,8 +7,8 @@ function aiJobMatchView(){
     <div class="glass" style="padding:22px;margin-bottom:18px;">
       <textarea class="input" id="matchResumeText" rows="6" placeholder="Paste resume text…"></textarea>
       <div style="display:flex;gap:10px;margin-top:12px;">
-        <button class="btn btn-outline" id="matchUploadBtn" type="button">📎 Upload Resume</button>
-        <button class="btn btn-primary" id="runMatchBtn" style="flex:1;">🎯 Find Best Matches</button>
+        <button class="btn btn-outline" id="matchUploadBtn" type="button">Upload Resume</button>
+        <button class="btn btn-primary" id="runMatchBtn" style="flex:1;">Find Best Matches</button>
       </div>
     </div>
     <div id="matchResults"></div>
@@ -28,7 +28,7 @@ function bindMatchView(){
         return;
       }
       const results = document.getElementById('matchResults');
-      results.innerHTML = `<div class="glass" style="padding:16px;font-size:13px;color:var(--ink-soft);">⏳ Uploading and extracting text…</div>`;
+      results.innerHTML = `<div class="glass" style="padding:16px;font-size:13px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;">${icon('loader',14)} Uploading and extracting text…</div>`;
       try{
         const result = await uploadResumeFile(f);
         ta.value = result.extractedText;
@@ -58,7 +58,7 @@ function bindMatchView(){
       }
       const matches = ranked.map(r => ({ job: state.jobs.find(j=>j.id===r.job.id) || r.job, m: r.match }));
       results.innerHTML = matches.map(({job,m},i)=> m ? `
-        <div class="glass tilt-card pop-in" style="padding:20px;margin-bottom:14px;display:flex;gap:18px;align-items:center;">
+        <div class="glass pop-in" style="padding:20px;margin-bottom:14px;display:flex;gap:18px;align-items:center;">
           ${matchMeterSVG(m.matchPercent, 68, 7)}
           <div style="flex:1;">
             <div style="display:flex;align-items:center;gap:8px;">
@@ -84,21 +84,24 @@ function openPositionsView(){
     <h1 class="display" style="font-size:24px;margin:0 0 4px;">Open Positions</h1>
     <p style="color:var(--ink-soft);font-size:13.5px;margin:0 0 20px;">${state.jobs.length} roles hiring now across MuraAI.</p>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">
-      ${state.jobs.map((j,i)=>`
-      <div class="glass tilt-card fade-up" style="padding:20px;">
-        <div style="display:flex;justify-content:space-between;align-items:start;">
-          <div style="width:44px;height:44px;border-radius:12px;background:${GRADS[i%GRADS.length]};display:flex;align-items:center;justify-content:center;font-size:19px;">💼</div>
-          ${bestJobId===j.id?'<span class="chip" style="background:rgba(5,150,105,0.15);color:#059669;">Best Match</span>':''}
+      ${state.jobs.map(j=>{
+        const refCount = state.referrals.filter(r=>r.jobId===j.id).length;
+        return `
+      <div class="glass fade-up" style="padding:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.08em;">${j.dept}</div>
+          ${bestJobId===j.id?'<span class="chip" style="background:rgba(5,150,105,0.12);color:#047857;">Best Match</span>':''}
         </div>
-        <h3 class="display" style="font-size:16.5px;margin:12px 0 4px;">${j.title}</h3>
-        <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">${j.dept} · ${j.exp} · ${j.location}</div>
-        <div style="margin-bottom:10px;">${j.skills.slice(0,4).map((s,k)=>`<span class="skill-bubble" style="background:${skillTagColor(k)};animation:none;">${s}</span>`).join('')}</div>
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:14px;">
-          <div><span style="color:var(--ink-soft);">Salary</span><br/><strong>${j.salary}</strong></div>
-          <div><span style="color:var(--ink-soft);">Bonus</span><br/><strong style="color:var(--success);">₹${j.bonus.toLocaleString('en-IN')}</strong></div>
+        <h3 style="font-size:16px;font-weight:700;margin:0 0 6px;">${j.title}</h3>
+        <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;">${j.exp} · ${j.location} · ${j.type||'Full-time'}</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:12px;">
+          <div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;">Salary</div><div style="font-size:13px;font-weight:600;color:var(--text-primary);">${j.salary}</div></div>
+          <div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;">Bonus</div><div style="font-size:13px;font-weight:700;color:var(--teal);">₹${(j.bonus||0).toLocaleString('en-IN')}</div></div>
+          <div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;">Referrals</div><div style="font-size:13px;font-weight:600;color:var(--text-primary);">${refCount}</div></div>
         </div>
-        <button class="btn btn-primary" style="width:100%;" data-apply-job="${j.id}">Apply Referral</button>
-      </div>`).join('')}
+        <div style="margin-bottom:14px;">${j.skills.slice(0,4).map((s,k)=>`<span class="skill-bubble" style="background:${skillTagColor(k)};animation:none;">${s}</span>`).join('')}</div>
+        <button class="btn btn-primary" style="width:100%;" data-apply-job="${j.id}">Refer Candidate</button>
+      </div>`}).join('')}
     </div>
   </div>`;
 }
@@ -129,7 +132,7 @@ function pipelineHTML(status){
 }
 function myReferralsView(){
   const mine = state.referrals.filter(r=>r.referredBy===state.user.employeeId);
-  if(mine.length===0) return `<div class="glass" style="padding:40px;text-align:center;"><div style="font-size:38px;margin-bottom:10px;">📭</div><h3>No referrals yet</h3><p style="color:var(--ink-soft);">Refer your first candidate to see it tracked here.</p><button class="btn btn-primary" data-nav="refer" style="margin-top:10px;">Refer a Candidate</button></div>`;
+  if(mine.length===0) return `<div class="glass" style="padding:40px;text-align:center;"><h3 style="margin:0 0 6px;">No referrals yet</h3><p style="color:var(--text-secondary);margin:0 0 14px;">Refer your first candidate to see it tracked here.</p><button class="btn btn-primary" data-nav="refer">Refer a Candidate</button></div>`;
   return `
   <div class="fade-up">
     <h1 class="display" style="font-size:24px;margin:0 0 18px;">My Referrals</h1>
@@ -139,7 +142,7 @@ function myReferralsView(){
         return `<div class="glass" style="padding:22px;">
           <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;">
             <div style="display:flex;gap:12px;align-items:center;">
-              <div style="width:42px;height:42px;border-radius:50%;background:${skillTagColor(r.candidateName.length)};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;">${initials(r.candidateName)}</div>
+              <div style="width:42px;height:42px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;">${initials(r.candidateName)}</div>
               <div>
                 <div style="font-weight:700;font-size:15px;">${r.candidateName}</div>
                 <div style="font-size:12px;color:var(--ink-soft);">${job?job.title:'—'} · Submitted ${fmtRelative(r.submittedDate)}</div>
@@ -169,7 +172,7 @@ function referralDetailModal(r){
           <h2 class="display" style="margin:0 0 2px;font-size:19px;">${r.candidateName}</h2>
           <div style="font-size:12.5px;color:var(--ink-soft);">${job?job.title:'—'} · Applying via ${employeeById(r.referredBy)?.name||'referral'}</div>
         </div>
-        <button class="btn btn-ghost" id="closeRefModal" style="font-size:18px;padding:4px 10px;">✕</button>
+        <button class="btn btn-ghost" id="closeRefModal" style="padding:4px 8px;">${icon('x',16)}</button>
       </div>
       <div class="chip" style="background:${statusColor(r.status)}22;color:${statusColor(r.status)};margin:12px 0;">${r.status}</div>
       ${pipelineHTML(r.status)}
@@ -192,8 +195,8 @@ function referralDetailModal(r){
       <div style="margin-bottom:6px;font-size:13px;font-weight:700;">Skills</div>
       <div style="margin-bottom:14px;">${skillBubbles(r.tags&&r.tags.length?r.tags:['—'])}</div>
       <div style="display:flex;gap:10px;">
-        <button class="btn btn-outline" id="genEmailBtn" style="flex:1;">✉️ Generate Referral Email</button>
-        ${r.status==='Applied'||r.status==='Submitted' ? `<button class="btn btn-ghost" id="withdrawRefBtn" style="color:var(--coral);border:1px solid rgba(220,38,38,0.3);flex:1;">🗑️ Withdraw Referral</button>` : ''}
+        <button class="btn btn-outline" id="genEmailBtn" style="flex:1;">Generate Referral Email</button>
+        ${r.status==='Applied'||r.status==='Submitted' ? `<button class="btn btn-ghost" id="withdrawRefBtn" style="color:var(--coral);border:1px solid rgba(220,38,38,0.3);flex:1;">Withdraw Referral</button>` : ''}
       </div>
       <div id="genEmailResult" style="margin-top:12px;"></div>
     </div>
@@ -220,7 +223,7 @@ function bindTrackingView(){
           const email = await aiGenerateEmail(r);
           document.getElementById('genEmailResult').innerHTML = `<div class="glass" style="padding:14px;font-size:12.5px;white-space:pre-wrap;line-height:1.6;">${email}</div>`;
         }catch(e){ toast('Could not generate email', 'error'); }
-        genBtn.disabled = false; genBtn.textContent = '✉️ Generate Referral Email';
+        genBtn.disabled = false; genBtn.textContent = 'Generate Referral Email';
       });
       const withdrawBtn = document.getElementById('withdrawRefBtn');
       if(withdrawBtn){
@@ -233,7 +236,7 @@ function bindTrackingView(){
             wrap.remove();
             toast('Referral withdrawn', 'success');
             render();
-          }catch(e){ toast(e.message||'Could not withdraw referral', 'error'); withdrawBtn.disabled=false; withdrawBtn.textContent='🗑️ Withdraw Referral'; }
+          }catch(e){ toast(e.message||'Could not withdraw referral', 'error'); withdrawBtn.disabled=false; withdrawBtn.textContent='Withdraw Referral'; }
         });
       }
     });
@@ -247,14 +250,13 @@ function leaderboardView(){
     const selected = refs.filter(r=>r.status==='Joined').length;
     return {...e, count:refs.length, selected, rate: refs.length? Math.round(selected/refs.length*100):0};
   }).sort((a,b)=>b.count-a.count);
-  const medals = ['🥇','🥈','🥉'];
   return `
   <div class="fade-up" style="max-width:720px;">
     <h1 class="display" style="font-size:24px;margin:0 0 18px;">Referral Leaderboard</h1>
     <div style="display:flex;flex-direction:column;gap:12px;">
       ${ranked.map((e,i)=>`
-      <div class="glass tilt-card" style="padding:16px 20px;display:flex;align-items:center;gap:14px;${e.id===state.user.employeeId?'border:1.5px solid rgba(37,99,235,0.5);':''}">
-        <div style="font-size:22px;width:34px;text-align:center;">${medals[i]||('#'+(i+1))}</div>
+      <div class="glass" style="padding:16px 20px;display:flex;align-items:center;gap:14px;${e.id===state.user.employeeId?'border:1.5px solid rgba(37,99,235,0.5);':''}">
+        <div class="mono" style="font-size:15px;font-weight:700;width:34px;text-align:center;color:${i===0?'#D97706':i===1?'#64748B':i===2?'#B45309':'var(--text-secondary)'};">${i+1}</div>
         <div style="width:40px;height:40px;border-radius:50%;background:${e.color};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;">${initials(e.name)}</div>
         <div style="flex:1;">
           <div style="font-weight:700;font-size:14.5px;">${e.name} ${e.id===state.user.employeeId?'<span style="color:var(--primary);font-size:11.5px;">(You)</span>':''}</div>
@@ -271,31 +273,23 @@ function rewardsView(){
   const mine = state.referrals.filter(r=>r.referredBy===state.user.employeeId);
   const paid = mine.filter(r=>r.status==='Joined').reduce((s,r)=>s+(jobById(r.jobId)?.bonus||0),0);
   const pending = mine.filter(r=>r.status==='Offer').reduce((s,r)=>s+(jobById(r.jobId)?.bonus||0),0);
-  const count = mine.length;
-  const badges = [
-    {icon:'🏆', name:'Talent Hunter', desc:'Refer your first candidate', unlocked: count>=1},
-    {icon:'🌟', name:'Top Referrer', desc:'Refer 3+ candidates', unlocked: count>=3},
-    {icon:'🚀', name:'Hiring Hero', desc:'Get 1 candidate hired', unlocked: mine.some(r=>r.status==='Joined')},
-    {icon:'💎', name:'Gold Recruiter', desc:'Refer 5+ candidates', unlocked: count>=5},
-  ];
+  const paidCount = mine.filter(r=>r.status==='Joined').length;
+  const pendingCount = mine.filter(r=>r.status==='Offer').length;
   return `
-  <div class="fade-up">
-    <h1 class="display" style="font-size:24px;margin:0 0 18px;">Rewards</h1>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:26px;">
-      ${statCard('Paid Bonus', '₹'+paid.toLocaleString('en-IN'), '💰', GRADS[2])}
-      ${statCard('Pending Bonus', '₹'+pending.toLocaleString('en-IN'), '⏳', GRADS[4])}
-      ${statCard('Gift Cards Earned', Math.floor(count/2), '🎁', GRADS[1])}
-      ${statCard('Achievements', badges.filter(b=>b.unlocked).length+'/'+badges.length, '🏅', GRADS[0])}
-    </div>
-    <h3 class="display" style="font-size:16px;margin-bottom:12px;">Achievement Badges</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;">
-      ${badges.map(b=>`
-      <div class="glass tilt-card" style="padding:20px;text-align:center;opacity:${b.unlocked?1:0.45};">
-        <div class="badge-icon" style="margin:0 auto 10px;background:${b.unlocked?'linear-gradient(135deg,#2563EB,#0891B2)':'rgba(37,99,235,0.1)'};">${b.icon}</div>
-        <div style="font-weight:700;font-size:13.5px;">${b.name}</div>
-        <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${b.desc}</div>
-        ${b.unlocked?'<div class="chip" style="background:rgba(5,150,105,0.15);color:#059669;margin-top:8px;">Unlocked</div>':'<div class="chip" style="background:rgba(37,99,235,0.08);color:var(--ink-soft);margin-top:8px;">Locked</div>'}
-      </div>`).join('')}
+  <div class="fade-up" style="max-width:760px;">
+    <h1 class="display" style="font-size:24px;margin:0 0 6px;">Rewards</h1>
+    <p style="color:var(--text-secondary);font-size:13px;margin:0 0 22px;">Track referral bonuses paid and pending payout for your referrals.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;">
+      <div class="glass" style="padding:22px;border-left:4px solid #059669;">
+        <div style="font-size:12px;font-weight:700;color:#059669;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Paid Bonus</div>
+        <div class="mono" style="font-size:26px;font-weight:700;">₹${paid.toLocaleString('en-IN')}</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${paidCount} hire${paidCount===1?'':'s'} with bonus paid</div>
+      </div>
+      <div class="glass" style="padding:22px;border-left:4px solid #D97706;">
+        <div style="font-size:12px;font-weight:700;color:#D97706;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Pending Bonus</div>
+        <div class="mono" style="font-size:26px;font-weight:700;">₹${pending.toLocaleString('en-IN')}</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${pendingCount} offer${pendingCount===1?'':'s'} awaiting payout</div>
+      </div>
     </div>
   </div>`;
 }

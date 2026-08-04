@@ -31,7 +31,7 @@ def list_all_users(db: Session = Depends(get_db), user=Depends(require_admin)):
 @router.patch("/users/{user_id}/role")
 def change_user_role(user_id: str, role: str, db: Session = Depends(get_db),
                      user=Depends(require_admin)):
-    VALID_ROLES = {"employee", "manager", "hr", "hr_manager", "vp", "cto", "ceo", "system_admin", "admin"}
+    VALID_ROLES = {"employee", "manager", "hr", "hr_manager", "chro", "vp", "cto", "ceo", "system_admin", "admin"}
     if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {', '.join(sorted(VALID_ROLES))}")
     target = db.query(models.User).filter(models.User.id == user_id).first()

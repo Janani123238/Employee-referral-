@@ -38,6 +38,8 @@ class EmployeeOut(BaseModel):
     dept: str
     designation: str = ""
     email: str
+    phone: str = ""
+    location: str = ""
     color: str
     joined: str
     isActive: bool = Field(alias="is_active")
@@ -53,6 +55,8 @@ class EmployeeCreateIn(BaseModel):
     email: EmailStr
     dept: str = "General"
     designation: str = ""
+    phone: str = ""
+    location: str = ""
     color: Optional[str] = None
     createLogin: bool = True
     role: str = "employee"
@@ -62,6 +66,8 @@ class EmployeeUpdateIn(BaseModel):
     name: Optional[str] = None
     dept: Optional[str] = None
     designation: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
     color: Optional[str] = None
     isActive: Optional[bool] = None
 
@@ -120,6 +126,15 @@ class ReferralStatusUpdate(BaseModel):
     status: str
 
 
+class OverrideDecisionIn(BaseModel):
+    targetStatus: str
+    reason: str = ""
+
+
+class DeepScreenIn(BaseModel):
+    referralId: str
+
+
 # ---------- Notification ----------
 class NotificationOut(BaseModel):
     id: str
@@ -142,6 +157,15 @@ class NotificationMarkRead(BaseModel):
 # ---------- Referral Policy ----------
 class PolicyUpdateIn(BaseModel):
     content: str
+
+
+# ---------- Knowledge Base ----------
+class KnowledgeArticleIn(BaseModel):
+    title: str = Field(min_length=2)
+    category: str = "General"
+    audience: str = "all"  # all | employee | hr
+    content: str = Field(min_length=10)
+    tags: List[str] = []
 
 
 # ---------- Settings ----------
@@ -205,6 +229,43 @@ class ChatMessageIn(BaseModel):
     message: str
     history: List[Dict[str, str]] = []
 
+class ShortlistIn(BaseModel):
+    """AI shortlisting input. Provide matchPercent directly, OR resumeText + jobId
+    so the backend computes the match first (resume screening Step 1-4)."""
+    matchPercent: Optional[float] = None
+    resumeText: Optional[str] = None
+    jobId: Optional[str] = None
+
+
+# ---------- Email Center ----------
+class EmailSendIn(BaseModel):
+    to: List[str]
+    cc: List[str] = []
+    bcc: List[str] = []
+    subject: str
+    body: str
+    category: str = "manual"  # automated | bulk | ai | manual
+    emailType: str = "general"
+    referralId: Optional[str] = None
+    jobId: Optional[str] = None
+    scheduleFor: Optional[str] = None  # ISO datetime — if set, recorded as "scheduled"
+
+class BulkEmailFilterIn(BaseModel):
+    status: Optional[str] = None
+    jobId: Optional[str] = None
+    dept: Optional[str] = None
+    matchMin: Optional[float] = None
+    matchMax: Optional[float] = None
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    excludeEmailed: bool = False
+
+class BulkEmailSendIn(BulkEmailFilterIn):
+    subject: str
+    body: str
+    emailType: str = "bulk"
+    dryRun: bool = False
+
 
 # ---------- Reports ----------
 class ReportFilterIn(BaseModel):
@@ -214,6 +275,12 @@ class ReportFilterIn(BaseModel):
     jobId: Optional[str] = None
     status: Optional[str] = None
     employeeId: Optional[str] = None
+
+
+class ReportExportIn(BaseModel):
+    reportType: str = "referral"  # referral | interview | offer | joining | bonus | hiring
+    format: str = "xlsx"          # xlsx | pdf
+    filters: ReportFilterIn = ReportFilterIn()
 
 
 # ---------- Audit Log ----------
@@ -354,6 +421,7 @@ class SendEmailIn(BaseModel):
     templateId: Optional[str] = None
     referralId: Optional[str] = None
     interviewId: Optional[str] = ""
+    jobId: Optional[str] = ""
 
 
 # ---------- AI Email Composer ----------

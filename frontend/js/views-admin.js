@@ -4,7 +4,7 @@ function userManagementView(){
   <div class="fade-up">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
       <h1 class="display" style="font-size:24px;margin:0;">User Management</h1>
-      <button class="btn btn-primary" id="refreshUsersBtn">🔄 Refresh</button>
+      <button class="btn btn-primary" id="refreshUsersBtn">Refresh</button>
     </div>
     <div id="usersList"></div>
   </div>`;
@@ -12,7 +12,7 @@ function userManagementView(){
 
 /* ------------------------------- Referral Policy View (both roles) ------------------------------- */
 function policyView(){
-  const canEdit = state.role==='admin';
+  const canEdit = state.role==='admin' || state.role==='system_admin' || state.role==='chro';
   return `
   <div class="fade-up" style="max-width:720px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
@@ -65,9 +65,8 @@ function reportsView(){
           <select class="input" id="reportStatus" style="width:140px;"><option value="">All</option>${PIPELINE_STAGES.concat('Rejected').map(s=>`<option>${s}</option>`).join('')}</select>
         </div>
         <button class="btn btn-primary" id="generateReportBtn">Generate</button>
-        <button class="btn btn-outline" id="exportCsvBtn">📥 CSV</button>
-        <button class="btn btn-outline" id="exportPdfBtn">📄 PDF</button>
-        <button class="btn btn-outline" id="exportExcelBtn">📊 Excel</button>
+        <button class="btn btn-outline" id="exportExcelBtn" title="Download as Excel (.xlsx)">Export Excel (.xlsx)</button>
+        <button class="btn btn-outline" id="exportPdfBtn" title="Download as PDF">Export PDF</button>
       </div>
     </div>
     <div id="reportOutput"></div>
@@ -104,9 +103,9 @@ function bindReportsView(){
         const summary = data.summary || {};
         output.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:16px;">
-          ${statCard('Total', filtered.length, '📨', GRADS[0])}
-          ${statCard('Avg AI Score', filtered.length? Math.round(filtered.reduce((s,r)=>s+(r.aiScore||0),0)/filtered.length):'—', '🎯', GRADS[5])}
-          ${statCard('Avg Match %', filtered.length? Math.round(filtered.reduce((s,r)=>s+(r.matchPercent||0),0)/filtered.length)+'%':'—', '📊', GRADS[1])}
+          ${statCard('Total', filtered.length, 'referrals', GRADS[0])}
+          ${statCard('Avg AI Score', filtered.length? Math.round(filtered.reduce((s,r)=>s+(r.aiScore||0),0)/filtered.length):'—', 'score', GRADS[5])}
+          ${statCard('Avg Match %', filtered.length? Math.round(filtered.reduce((s,r)=>s+(r.matchPercent||0),0)/filtered.length)+'%':'—', 'match', GRADS[1])}
         </div>
         <div class="glass" style="padding:6px;overflow-x:auto;">
           <table class="data-table">
@@ -122,10 +121,10 @@ function bindReportsView(){
       } else if(activeReport==='hiring'){
         output.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:16px;">
-          ${statCard('Total Referrals', data.totalReferrals||0, '📨', GRADS[0])}
-          ${statCard('Joined', data.joined||0, '✅', GRADS[2])}
-          ${statCard('Conversion Rate', (data.conversionRate||0)+'%', '📈', GRADS[1])}
-          ${statCard('Active Employees', data.activeEmployees||0, '👥', GRADS[5])}
+          ${statCard('Total Referrals', data.totalReferrals||0, 'referrals', GRADS[0])}
+          ${statCard('Joined', data.joined||0, 'joined', GRADS[2])}
+          ${statCard('Conversion Rate', (data.conversionRate||0)+'%', 'conversion', GRADS[1])}
+          ${statCard('Active Employees', data.activeEmployees||0, 'active', GRADS[5])}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
           <div class="glass" style="padding:16px;">
@@ -140,8 +139,8 @@ function bindReportsView(){
       } else {
         output.innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:16px;">
-          ${statCard('Total Bonus Paid', '₹'+(data.totalBonus||0).toLocaleString('en-IN'), '💰', GRADS[4])}
-          ${statCard('Hires with Bonus', data.totalPaid||0, '👥', GRADS[1])}
+          ${statCard('Total Bonus Paid', '₹'+(data.totalBonus||0).toLocaleString('en-IN'), 'bonus', GRADS[4])}
+          ${statCard('Hires with Bonus', data.totalPaid||0, 'joined', GRADS[1])}
         </div>
         <div class="glass" style="padding:16px;">
           <h4 style="margin:0 0 10px;font-size:13.5px;">Bonus Breakdown</h4>
@@ -151,42 +150,41 @@ function bindReportsView(){
     }catch(e){ output.innerHTML=''; toast('Could not generate report: '+e.message, 'error'); }
   });
 
-  function exportAs(format){
-    const headers = ['Candidate','Job','Department','Referred By','Status','AI Score','Match %','Submitted'];
-    const rows = state.referrals.map(r=>{
-      const job = jobById(r.jobId); const emp = employeeById(r.referredBy);
-      return [r.candidateName, job?.title||'', job?.dept||'', emp?.name||'', r.status, r.aiScore?.overall||'', r.matchPercent||'', r.submittedDate];
-    });
-    if(format==='csv'){
-      let csv = headers.join(',')+'\n';
-      rows.forEach(row=>{ csv += row.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')+'\n'; });
-      const blob = new Blob([csv], {type:'text/csv'});
-      const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='muraai-report.csv'; a.click();
-      toast('CSV downloaded','success');
-    } else if(format==='excel'){
-      let xml = '<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Report"><Table>';
-      xml += '<Row>'+headers.map(h=>`<Cell><Data ss:Type="String">${h}</Data></Cell>`).join('')+'</Row>';
-      rows.forEach(row=>{ xml += '<Row>'+row.map(c=>`<Cell><Data ss:Type="String">${String(c).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</Data></Cell>`).join('')+'</Row>'; });
-      xml += '</Table></Worksheet></Workbook>';
-      const blob = new Blob([xml], {type:'application/vnd.ms-excel'});
-      const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='muraai-report.xls'; a.click();
-      toast('Excel downloaded','success');
-    } else if(format==='pdf'){
-      let content = 'MURA AI REFER - REPORT\n';
-      content += '='.repeat(60)+'\n\n';
-      content += headers.join(' | ')+'\n';
-      content += '-'.repeat(80)+'\n';
-      rows.forEach(row=>{ content += row.join(' | ')+'\n'; });
-      content += '\n'+'='.repeat(60)+'\n';
-      content += `Generated: ${new Date().toLocaleString()}\nTotal Records: ${rows.length}\n`;
-      const blob = new Blob([content], {type:'text/plain'});
-      const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='muraai-report.txt'; a.click();
-      toast('Report downloaded','success');
-    }
+  async function exportReport(format){
+    const filters = {
+      startDate: document.getElementById('reportStartDate').value || null,
+      endDate: document.getElementById('reportEndDate').value || null,
+      dept: document.getElementById('reportDept').value || null,
+      status: document.getElementById('reportStatus').value || null,
+    };
+    try{
+      const res = await fetch(API_BASE + '/api/reports/export', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', Authorization:'Bearer '+(getToken()||'')},
+        body: JSON.stringify({reportType: activeReport, format, filters}),
+      });
+      if(res.status === 401){
+        clearToken(); state.user=null; state.role=null; render();
+        throw new Error('Session expired, please sign in again');
+      }
+      if(!res.ok){
+        let data=null; try{ data = await res.json(); }catch(e){}
+        throw new Error((data && (data.detail || data.message)) || `Export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      const filename = (match && match[1]) || `muraai-report.${format==='xlsx'?'xlsx':'pdf'}`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast(`${format.toUpperCase()} downloaded`, 'success');
+    }catch(e){ toast('Export failed: '+e.message, 'error'); }
   }
-  document.getElementById('exportCsvBtn')?.addEventListener('click', ()=>exportAs('csv'));
-  document.getElementById('exportPdfBtn')?.addEventListener('click', ()=>exportAs('pdf'));
-  document.getElementById('exportExcelBtn')?.addEventListener('click', ()=>exportAs('excel'));
+  document.getElementById('exportExcelBtn')?.addEventListener('click', ()=>exportReport('xlsx'));
+  document.getElementById('exportPdfBtn')?.addEventListener('click', ()=>exportReport('pdf'));
 }
 
 /* ------------------------------- Admin: Config Settings ------------------------------- */
@@ -440,3 +438,142 @@ async function bindAuditLogsView(){
     </div>`;
   }catch(e){ container.innerHTML='<div class="glass" style="padding:20px;color:var(--coral);">Could not load logs: '+e.message+'</div>'; }
 }
+
+/* ------------------------------- Email Center (Admin) ------------------------------- */
+function emailCenterView(){
+  return `
+  <div class="fade-up">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div><h1 class="display" style="font-size:24px;margin:0 0 4px;">Email Center</h1>
+      <p style="color:var(--ink-soft);font-size:13px;margin:0;">Compose, send, and track candidate communications</p></div>
+      <button class="btn btn-primary" id="ecComposeBtn">Compose Email</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+      <button class="btn btn-outline report-tab active" data-ectab="history">Sent History</button>
+      <button class="btn btn-outline report-tab" data-ectab="compose">Compose</button>
+    </div>
+    <div id="ecContent"></div>
+    <div id="ecModal"></div>
+  </div>`;
+}
+
+async function bindEmailCenterView(){
+  const content = document.getElementById('ecContent');
+  if(!content) return;
+
+  const loadHistory = async ()=>{
+    content.innerHTML = `<div class="glass" style="padding:20px;"><div class="shimmer" style="height:60px;border-radius:12px;"></div></div>`;
+    try{
+      const emails = await api('/api/emails/history');
+      if(!emails || emails.length===0){
+        content.innerHTML = `<div class="glass" style="padding:40px;text-align:center;color:var(--ink-soft);">No emails have been sent yet.</div>`;
+        return;
+      }
+      const statusColor = {sent:'#059669', delivered:'#059669', scheduled:'#D97706', failed:'#DC2626'};
+      content.innerHTML = `
+      <div class="glass" style="padding:6px;overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>To</th><th>Subject</th><th>Type</th><th>Status</th><th>Category</th><th>Sent</th><th></th></tr></thead>
+          <tbody>
+            ${emails.map(e=>{
+              const sc = statusColor[(e.status||'').toLowerCase()] || '#2563EB';
+              return `<tr>
+                <td><strong>${e.toEmail||'—'}</strong>${e.cc?`<div style="font-size:11px;color:var(--ink-soft);">cc: ${e.cc}</div>`:''}</td>
+                <td style="font-size:12.5px;max-width:260px;">${e.subject||'—'}</td>
+                <td><span class="chip" style="background:rgba(37,99,235,0.12);color:var(--primary);">${e.emailType||'general'}</span></td>
+                <td><span class="chip" style="background:${sc}18;color:${sc};">${e.status||'—'}</span></td>
+                <td style="font-size:12px;">${e.category||'—'}</td>
+                <td style="font-size:11.5px;color:var(--ink-soft);">${e.createdAt?new Date(e.createdAt).toLocaleString():'—'}</td>
+                <td>${e.body?`<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;" data-ec-view='${e.id}'>View</button>`:''}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:var(--ink-soft);">${emails.length} email record(s)</div>`;
+      content.querySelectorAll('[data-ec-view]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const e = emails.find(x=>x.id===btn.dataset.ecView);
+          if(!e) return;
+          document.getElementById('ecModal').innerHTML = `
+          <div class="modal-overlay" id="ecOverlay">
+            <div class="glass-strong pop-in" style="max-width:600px;width:100%;padding:24px;max-height:85vh;overflow-y:auto;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                <h3 style="margin:0;font-size:15px;">${e.subject||'Email'}</h3>
+                <button class="btn btn-ghost" onclick="document.getElementById('ecOverlay').remove()" style="padding:6px;">${icon('x',16)}</button>
+              </div>
+              <div style="font-size:12px;color:var(--ink-soft);margin-bottom:12px;">To: <strong>${e.toEmail}</strong>${e.cc?' · cc: '+e.cc:''} · ${e.emailType||'general'} · ${e.createdAt?new Date(e.createdAt).toLocaleString():''}</div>
+              <div class="glass" style="padding:16px;font-size:13px;line-height:1.6;white-space:pre-wrap;">${e.body||'(empty body)'}</div>
+            </div>
+          </div>`;
+        });
+      });
+    }catch(e){ content.innerHTML = `<div class="glass" style="padding:20px;color:var(--coral);">Could not load email history: ${e.message}</div>`; }
+  };
+
+  const loadCompose = ()=>{
+    const candidates = state.referrals.filter(r=>r.email);
+    content.innerHTML = `
+    <div class="glass" style="padding:20px;max-width:760px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label class="field-label">Recipient</label>
+          <select class="input" id="ecToSelect"><option value="">Custom…</option>${candidates.map(r=>`<option value="${r.email}">${r.candidateName} &lt;${r.email}&gt;</option>`).join('')}</select>
+        </div>
+        <div><label class="field-label">Or Custom Email</label><input class="input" id="ecToCustom" placeholder="hr@muraai.com"/></div>
+        <div style="grid-column:1/-1;"><label class="field-label">Subject</label><input class="input" id="ecSubject" placeholder="Subject line"/></div>
+        <div style="grid-column:1/-1;"><label class="field-label">Message</label><textarea class="input" id="ecBody" rows="8" placeholder="Write your message…"></textarea></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="btn btn-outline" id="ecAiBtn">AI Compose</button>
+        <button class="btn btn-primary" id="ecSendBtn">Send Email</button>
+      </div>
+      <div id="ecAiArea"></div>
+    </div>`;
+
+    document.getElementById('ecAiBtn').addEventListener('click', async ()=>{
+      const aiArea = document.getElementById('ecAiArea');
+      const prompt = document.getElementById('ecBody').value.trim();
+      const candName = candidates.find(c=>c.email===document.getElementById('ecToSelect').value)?.candidateName || 'the candidate';
+      aiArea.innerHTML = `<div style="margin-top:12px;font-size:12px;color:var(--ink-soft);">AI is composing…</div>`;
+      try{
+        const r = await api('/api/ai/compose-email', {method:'POST', body:{context:'general', candidateName:candName, jobTitle:'the position', companyName:'MuraAI', prompt:prompt}});
+        document.getElementById('ecSubject').value = r.subject || '';
+        document.getElementById('ecBody').value = r.body || '';
+        aiArea.innerHTML = `<div style="margin-top:12px;font-size:12px;color:#059669;">AI draft ready — review and send.</div>`;
+      }catch(e){
+        aiArea.innerHTML = `<div style="margin-top:12px;font-size:12px;color:var(--coral);">AI compose failed: ${e.message}</div>`;
+      }
+    });
+
+    document.getElementById('ecSendBtn').addEventListener('click', async ()=>{
+      const to = document.getElementById('ecToSelect').value || document.getElementById('ecToCustom').value.trim();
+      const subject = document.getElementById('ecSubject').value.trim();
+      const body = document.getElementById('ecBody').value.trim();
+      if(!to){ toast('Enter a recipient email', 'amber'); return; }
+      if(!subject || !body){ toast('Subject and message are required', 'amber'); return; }
+      try{
+        const r = await api('/api/ai/send-email', {method:'POST', body:{to:[to], subject, body, emailType:'general'}});
+        toast(r.message || 'Email sent', 'success');
+        document.getElementById('ecToSelect').value='';
+        document.getElementById('ecToCustom').value='';
+        document.getElementById('ecSubject').value='';
+        document.getElementById('ecBody').value='';
+      }catch(e){ toast('Send failed: '+e.message, 'error'); }
+    });
+  };
+
+  const switchTab = (tab)=>{
+    document.querySelectorAll('[data-ectab]').forEach(b=>{
+      b.classList.toggle('active', b.dataset.ectab===tab);
+      b.style.background = b.dataset.ectab===tab ? 'linear-gradient(120deg,var(--primary),var(--indigo))' : '';
+      b.style.color = b.dataset.ectab===tab ? '#fff' : '';
+    });
+    if(tab==='history') loadHistory();
+    else loadCompose();
+  };
+
+  document.querySelectorAll('[data-ectab]').forEach(b=> b.addEventListener('click', ()=>switchTab(b.dataset.ectab)));
+  document.getElementById('ecComposeBtn').addEventListener('click', ()=>switchTab('compose'));
+  switchTab('history');
+}
+
